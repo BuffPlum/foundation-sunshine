@@ -208,11 +208,13 @@ Source: "{#MySourceDir}\tools\SetDpi.exe"; DestDir: "{app}\tools"; Flags: ignore
 Source: "{#MySourceDir}\tools\setreg.exe"; DestDir: "{app}\tools"; Flags: ignoreversion; Components: assets
 
 ; Autostart script
-Source: "{#MySourceDir}\scripts\autostart-service.bat"; DestDir: "{app}\scripts"; Flags: ignoreversion; Components: autostart
+; Always copy so users can run it manually as admin if they unchecked autostart.
+Source: "{#MySourceDir}\scripts\autostart-service.bat"; DestDir: "{app}\scripts"; Flags: ignoreversion
 
 ; Firewall scripts
-Source: "{#MySourceDir}\scripts\add-firewall-rule.bat"; DestDir: "{app}\scripts"; Flags: ignoreversion; Components: firewall
-Source: "{#MySourceDir}\scripts\delete-firewall-rule.bat"; DestDir: "{app}\scripts"; Flags: ignoreversion; Components: firewall
+; Always copy so users can run them manually as admin if they unchecked firewall.
+Source: "{#MySourceDir}\scripts\add-firewall-rule.bat"; DestDir: "{app}\scripts"; Flags: ignoreversion
+Source: "{#MySourceDir}\scripts\delete-firewall-rule.bat"; DestDir: "{app}\scripts"; Flags: ignoreversion
 
 ; Virtual Display Driver scripts & files
 Source: "{#MySourceDir}\scripts\install-vdd.bat"; DestDir: "{app}\scripts"; Flags: ignoreversion
@@ -227,6 +229,12 @@ Source: "{#MySourceDir}\scripts\uninstall-gamepad.bat"; DestDir: "{app}\scripts"
 Source: "{#MySourceDir}\scripts\vmouse\install-vmouse.bat"; DestDir: "{app}\scripts\vmouse"; Flags: ignoreversion
 Source: "{#MySourceDir}\scripts\vmouse\uninstall-vmouse.bat"; DestDir: "{app}\scripts\vmouse"; Flags: ignoreversion
 Source: "{#MySourceDir}\scripts\vmouse\driver\*"; DestDir: "{app}\scripts\vmouse\driver"; Flags: ignoreversion recursesubdirs
+
+; Virtual audio sink (microphone / VB-Cable) scripts
+; Always shipped — there is no install-time component for this; the user can
+; right-click + "Run as administrator" on install-vsink.bat to enable it.
+Source: "{#MySourceDir}\scripts\install-vsink.bat"; DestDir: "{app}\scripts"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#MySourceDir}\scripts\uninstall-vsink.bat"; DestDir: "{app}\scripts"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; Optional diagnostic tools
 Source: "{#MySourceDir}\tools\dxgi-info.exe"; DestDir: "{app}\tools"; Flags: ignoreversion; Components: tools
@@ -269,9 +277,12 @@ Filename: "https://docs.qq.com/aio/DSGdQc3htbFJjSFdO?p=DXpTjzl2kZwBjN7jlRMkRJ"; 
 Filename: "{win}\explorer.exe"; Parameters: """{app}\assets\gui\{#MyAppGUIExeName}"""; Description: "{cm:FinishLaunchGUI}"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
-; Stop running processes first
+; Stop running processes first. We force-kill the service binary
+; (sunshinesvc.exe) here as well, otherwise `sc stop` later may block waiting
+; on its stop handler — which is the typical "uninstaller appears frozen" symptom.
 Filename: "taskkill"; Parameters: "/f /im sunshine-gui.exe"; Flags: runhidden; RunOnceId: "KillGUI"
 Filename: "taskkill"; Parameters: "/f /im sunshine.exe"; Flags: runhidden; RunOnceId: "KillSunshine"
+Filename: "taskkill"; Parameters: "/f /im sunshinesvc.exe"; Flags: runhidden; RunOnceId: "KillSunshineSvc"
 ; Remove system components
 Filename: "{app}\scripts\delete-firewall-rule.bat"; Flags: runhidden waituntilterminated; RunOnceId: "DelFirewall"
 Filename: "{app}\scripts\uninstall-service.bat"; Flags: runhidden waituntilterminated; RunOnceId: "UninstallService"

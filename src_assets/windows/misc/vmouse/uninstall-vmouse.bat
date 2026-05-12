@@ -18,29 +18,45 @@ if not exist "%NEFCON%" (
     set "NEFCON=%ROOT_DIR%\tools\vdd\nefconw.exe"
 )
 
-rem Stop Sunshine service to release HID device handle
+rem Stop Sunshine service to release HID device handle.
+rem Use sc + taskkill instead of `net stop` to avoid up to 30s SCM blocking.
 echo Stopping Sunshine service...
 set "SERVICE_WAS_RUNNING=0"
-net stop SunshineService >nul 2>&1
+sc query SunshineService >nul 2>&1
 if not errorlevel 1 (
-    set "SERVICE_WAS_RUNNING=1"
+    rem Service exists; check if it's running
+    sc query SunshineService | find /I "RUNNING" >nul 2>&1
+    if not errorlevel 1 (
+        set "SERVICE_WAS_RUNNING=1"
+        sc stop SunshineService >nul 2>&1
+    )
+    rem Force-kill the service binary so it releases the HID handle quickly.
+    taskkill /f /im sunshinesvc.exe >nul 2>&1
+    timeout /t 1 /nobreak >nul 2>&1
     echo Sunshine service stopped.
-    timeout /t 2 /nobreak 1>nul
 ) else (
-    echo Sunshine service not running, OK.
+    echo Sunshine service not installed, OK.
 )
 
 if not exist "%NEFCON%" goto skip_nefcon_uninstall
 
 echo Removing all Virtual Mouse devices via nefcon...
 set "NEFCON_REMOVED=0"
+set "NEFCON_MAX_ITERS=20"
 :uninstall_remove_loop
 "%NEFCON%" --remove-device-node --hardware-id Root\ZakoVirtualMouse --class-guid 745a17a0-74d3-11d0-b6fe-00a0c90f57da
 if not errorlevel 1 (
     set /a NEFCON_REMOVED+=1
+    rem Hard cap to prevent an infinite loop if nefcon reports success without
+    rem actually removing anything (observed on some nefcon builds).
+    if !NEFCON_REMOVED! GEQ !NEFCON_MAX_ITERS! (
+        echo Reached max remove iterations (!NEFCON_MAX_ITERS!), stopping.
+        goto after_remove_loop
+    )
     timeout /t 1 /nobreak >nul
     goto uninstall_remove_loop
 )
+:after_remove_loop
 echo Removed !NEFCON_REMOVED! device node(s) via nefcon.
 
 echo Uninstalling Virtual Mouse driver...
@@ -73,8 +89,16 @@ if exist "%DIST_DIR%" (
 
 echo Virtual Mouse driver uninstalled.
 
-rem Restart Sunshine service if it was running before
+rem Restart Sunshine service if it was running before and still exists.
+rem In the full uninstaller flow the service has already been deleted by
+rem uninstall-service.bat, so this only matters when the script is run
+rem standalone (e.g. user-initiated driver reset).
 if "!SERVICE_WAS_RUNNING!"=="1" (
-    echo Restarting Sunshine service...
-    net start SunshineService >nul 2>&1
+    sc query SunshineService >nul 2>&1
+    if not errorlevel 1 (
+        echo Restarting Sunshine service...
+        sc start SunshineService >nul 2>&1
+    )
 )
+
+exit /b 0

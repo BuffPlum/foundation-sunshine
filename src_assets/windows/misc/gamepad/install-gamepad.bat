@@ -48,8 +48,10 @@ for /f "tokens=3" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVer
 rem get browser_download_url from asset 0 of https://api.github.com/repos/nefarius/vigembus/releases/latest
 set latest_release_url=https://api.github.com/repos/nefarius/vigembus/releases/latest
 
-rem Use curl to get the api response, and find the browser_download_url
-for /F "tokens=* USEBACKQ" %%F in (`curl -s !proxy! -L %latest_release_url% ^| findstr browser_download_url`) do (
+rem Use curl to get the api response, and find the browser_download_url.
+rem `--connect-timeout 10 --max-time 20` ensures we don't hang for minutes if
+rem GitHub or the local network is unreachable during install.
+for /F "tokens=* USEBACKQ" %%F in (`curl -s --connect-timeout 10 --max-time 20 !proxy! -L %latest_release_url% ^| findstr browser_download_url`) do (
   set browser_download_url=%%F
 )
 
@@ -66,12 +68,12 @@ if "%browser_download_url%"=="" (
 
 echo %browser_download_url%
 
-rem Download the exe
+rem Download the exe (with connect/transfer timeout to avoid install hang)
 set "installer=%temp_dir%\virtual_gamepad.exe"
-curl -f -s -L !proxy! -o "%installer%" "%browser_download_url%"
+curl -f -s -L --connect-timeout 10 --max-time 120 !proxy! -o "%installer%" "%browser_download_url%"
 if errorlevel 1 (
   echo Direct download failed, trying mirror...
-  curl -f -s -L !proxy! -o "%installer%" "https://mirror.ghproxy.com/%browser_download_url%"
+  curl -f -s -L --connect-timeout 10 --max-time 120 !proxy! -o "%installer%" "https://mirror.ghproxy.com/%browser_download_url%"
 )
 
 if not exist "%installer%" (

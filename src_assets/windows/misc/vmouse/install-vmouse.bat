@@ -53,15 +53,22 @@ rem ============================================================================
 rem  Stop Sunshine service to release HID device handle
 rem ============================================================================
 
+rem Use sc + taskkill (non-blocking) instead of `net stop`, which can block
+rem for up to 30 seconds on a stuck stop handler.
 echo Stopping Sunshine service...
 set "SERVICE_WAS_RUNNING=0"
-net stop SunshineService >nul 2>&1
+sc query SunshineService >nul 2>&1
 if not errorlevel 1 (
-    set "SERVICE_WAS_RUNNING=1"
+    sc query SunshineService | find /I "RUNNING" >nul 2>&1
+    if not errorlevel 1 (
+        set "SERVICE_WAS_RUNNING=1"
+        sc stop SunshineService >nul 2>&1
+    )
+    taskkill /f /im sunshinesvc.exe >nul 2>&1
+    timeout /t 1 /nobreak >nul 2>&1
     echo Sunshine service stopped.
-    timeout /t 2 /nobreak 1>nul
 ) else (
-    echo Sunshine service not running, OK.
+    echo Sunshine service not installed, OK.
 )
 
 rem ============================================================================
@@ -70,16 +77,24 @@ rem ============================================================================
 
 echo Cleaning up existing Virtual Mouse driver...
 
-rem Remove ALL existing device nodes (loop until none remain)
+rem Remove ALL existing device nodes (loop until none remain).
+rem Hard cap at 20 iterations to prevent an infinite loop if nefcon reports
+rem success without actually removing anything (observed on some builds).
 set "CLEANUP_COUNT=0"
+set "CLEANUP_MAX=20"
 :remove_loop
 "%NEFCON%" --remove-device-node --hardware-id Root\ZakoVirtualMouse --class-guid 745a17a0-74d3-11d0-b6fe-00a0c90f57da
 if not errorlevel 1 (
     set /a CLEANUP_COUNT+=1
+    if !CLEANUP_COUNT! GEQ !CLEANUP_MAX! (
+        echo Reached max remove iterations (!CLEANUP_MAX!), stopping.
+        goto after_remove_loop
+    )
     echo Removed a device node, checking for more...
     timeout /t 1 /nobreak >nul
     goto remove_loop
 )
+:after_remove_loop
 echo Removed !CLEANUP_COUNT! device node(s) via nefcon.
 
 rem Fallback: use pnputil to remove any remaining device instances
@@ -144,12 +159,10 @@ rem  Restart Sunshine service if it was running before
 rem ============================================================================
 
 if "!SERVICE_WAS_RUNNING!"=="1" (
-    echo Restarting Sunshine service...
-    net start SunshineService >nul 2>&1
+    sc query SunshineService >nul 2>&1
     if not errorlevel 1 (
-        echo Sunshine service restarted.
-    ) else (
-        echo WARNING: Could not restart Sunshine service.
+        echo Restarting Sunshine service...
+        sc start SunshineService >nul 2>&1
     )
 )
 
