@@ -57,7 +57,7 @@ install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/gamepad/"
 install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/vsink/"
         DESTINATION "scripts"
         COMPONENT vsink)
-# VDD: scripts & config from source tree, driver binaries from download cache
+# VDD: scripts & shared config from source tree, driver binaries from download cache
 install(FILES "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/vdd/install-vdd.bat"
               "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/vdd/uninstall-vdd.bat"
         DESTINATION "scripts"
@@ -69,7 +69,13 @@ install(FILES "${VDD_DRIVER_DIR}/ZakoVDD.dll"
               "${VDD_DRIVER_DIR}/ZakoVDD.inf"
               "${VDD_DRIVER_DIR}/zakovdd.cat"
               "${VDD_DRIVER_DIR}/ZakoVDD.cer"
-        DESTINATION "scripts/driver"
+        DESTINATION "scripts/driver/latest"
+        COMPONENT vdd)
+install(FILES "${VDD_WIN10_DRIVER_DIR}/ZakoVDD.dll"
+              "${VDD_WIN10_DRIVER_DIR}/ZakoVDD.inf"
+              "${VDD_WIN10_DRIVER_DIR}/zakovdd.cat"
+              "${VDD_WIN10_DRIVER_DIR}/ZakoVDD.cer"
+        DESTINATION "scripts/driver/win10"
         COMPONENT vdd)
 
 # vmouse: scripts from source tree, driver binaries + cert from download cache

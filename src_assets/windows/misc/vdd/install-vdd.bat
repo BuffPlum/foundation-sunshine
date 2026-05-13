@@ -3,9 +3,70 @@ set "PATH=%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemR
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
+if /i "%~1"=="--resolve-only" (
+    set "RESOLVE_ONLY=1"
+)
+
 rem install
-set "DRIVER_DIR=%~dp0\driver"
-echo %DRIVER_DIR%
+set "DRIVER_ROOT=%~dp0\driver"
+set "DRIVER_DIR=%DRIVER_ROOT%\win10"
+if not exist "%DRIVER_DIR%\ZakoVDD.inf" (
+    set "DRIVER_DIR=%DRIVER_ROOT%\latest"
+)
+set "CONFIG_SOURCE=%DRIVER_ROOT%\vdd_settings.xml"
+set "WIN_BUILD="
+set "WIN_BUILD_NUM="
+set "WIN_BUILD_SOURCE=registry"
+
+if defined VDD_TEST_WIN_BUILD (
+    set "WIN_BUILD=%VDD_TEST_WIN_BUILD%"
+    set "WIN_BUILD_SOURCE=override"
+) else (
+    for /f "tokens=3" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v CurrentBuildNumber 2^>nul ^| find /i "CurrentBuildNumber"') do set "WIN_BUILD=%%A"
+    if not defined WIN_BUILD (
+        for /f "tokens=3" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v CurrentBuild 2^>nul ^| find /i "CurrentBuild"') do set "WIN_BUILD=%%A"
+    )
+)
+
+if defined WIN_BUILD (
+    echo(!WIN_BUILD!| findstr /r "^[0-9][0-9]*$" >nul
+    if not errorlevel 1 (
+        set "WIN_BUILD_NUM=!WIN_BUILD!"
+    )
+)
+
+if not defined WIN_BUILD (
+    echo WARNING: Could not detect Windows build; defaulting to Win10 payload.
+)
+
+if defined WIN_BUILD if not defined WIN_BUILD_NUM (
+    echo WARNING: Ignoring non-numeric Windows build "!WIN_BUILD!" from !WIN_BUILD_SOURCE!; defaulting to Win10 payload.
+)
+
+if defined WIN_BUILD_NUM if !WIN_BUILD_NUM! GEQ 22000 if exist "%DRIVER_ROOT%\latest\ZakoVDD.inf" (
+    set "DRIVER_DIR=%DRIVER_ROOT%\latest"
+)
+
+if not exist "%DRIVER_DIR%\ZakoVDD.inf" (
+    set "DRIVER_DIR=%DRIVER_ROOT%"
+)
+
+if exist "%DRIVER_DIR%\vdd_settings.xml" (
+    set "CONFIG_SOURCE=%DRIVER_DIR%\vdd_settings.xml"
+)
+
+if not exist "%DRIVER_DIR%\ZakoVDD.inf" (
+    echo ERROR: VDD driver payload not found in "%DRIVER_DIR%"
+    exit /b 1
+)
+
+if defined WIN_BUILD_NUM (
+    echo Detected Windows build: !WIN_BUILD_NUM!
+)
+if not defined WIN_BUILD_NUM if defined WIN_BUILD echo Detected Windows build (raw): !WIN_BUILD!
+echo Using VDD payload: !DRIVER_DIR!
+
+if defined RESOLVE_ONLY goto :resolve_only
 
 rem Get sunshine root directory
 for %%I in ("%~dp0\..") do set "ROOT_DIR=%%~fI"
@@ -21,7 +82,7 @@ if exist "%DIST_DIR%" (
     rmdir /s /q "%DIST_DIR%"
 )
 mkdir "%DIST_DIR%"
-copy "%DRIVER_DIR%\*.*" "%DIST_DIR%"
+copy /y "%DRIVER_DIR%\*.*" "%DIST_DIR%" >nul
 
 rem Now we can use nefconw.exe to thoroughly clean up existing VDD adapters
 echo Thoroughly cleaning up existing VDD adapters...
@@ -68,7 +129,7 @@ rem Wait a bit more to ensure everything is cleaned up
 timeout /t 5 /nobreak 1>nul
 
 if not exist "%VDD_CONFIG%" (
-    copy "%DRIVER_DIR%\vdd_settings.xml" "%VDD_CONFIG%"
+    copy /y "%CONFIG_SOURCE%" "%VDD_CONFIG%" >nul
 )
 
 @REM write registry
@@ -85,3 +146,11 @@ echo Installing VDD adapter...
 "%NEFCON%" --install-driver --inf-path "%DIST_DIR%\ZakoVDD.inf"
 
 echo VDD installation completed!
+goto :eof
+
+:resolve_only
+echo RESOLVED_WIN_BUILD=!WIN_BUILD!
+echo RESOLVED_WIN_BUILD_NUM=!WIN_BUILD_NUM!
+echo RESOLVED_DRIVER_DIR=!DRIVER_DIR!
+echo RESOLVED_CONFIG_SOURCE=!CONFIG_SOURCE!
+exit /b 0

@@ -7,12 +7,14 @@
 #   FETCH_DRIVER_DEPS       — Enable/disable downloads (default: ON)
 #   VMOUSE_DRIVER_VERSION   — ZakoVirtualMouse release tag (e.g. v1.1.0)
 #   VDD_DRIVER_VERSION      — ZakoVDD release tag (e.g. v0.1.4)
+#   VDD_WIN10_DRIVER_VERSION — Win10-pinned ZakoVDD release tag
 #   NEFCON_VERSION          — nefcon release tag (e.g. v1.10.0)
 #   GITHUB_TOKEN            — Token for private repos (or set env GITHUB_TOKEN)
 #
 # Output variables (CACHE FORCE, available to parent):
 #   VMOUSE_DRIVER_DIR       — Directory containing vmouse driver files
-#   VDD_DRIVER_DIR          — Directory containing VDD driver files
+#   VDD_DRIVER_DIR          — Directory containing latest VDD driver files
+#   VDD_WIN10_DRIVER_DIR    — Directory containing Win10-pinned VDD driver files
 #   NEFCON_DRIVER_DIR       — Directory containing nefconw.exe
 
 include_guard(GLOBAL)
@@ -26,6 +28,9 @@ option(FETCH_DRIVER_DEPS "Download driver dependencies from GitHub Releases" ON)
 # Version pins
 set(VMOUSE_DRIVER_VERSION "v1.2.0" CACHE STRING "ZakoVirtualMouse driver version tag")
 set(VDD_DRIVER_VERSION "v0.15.1" CACHE STRING "ZakoVDD driver version tag")
+set(VDD_WIN10_DRIVER_VERSION "v0.14.3-rc1-edid13-test" CACHE STRING "Win10-pinned ZakoVDD driver version tag")
+set(VDD_DRIVER_ASSET_NAME "zakovdd.zip" CACHE STRING "Latest ZakoVDD release asset name")
+set(VDD_WIN10_DRIVER_ASSET_NAME "ZakoVDD-edid13-issue612.zip" CACHE STRING "Win10-pinned ZakoVDD release asset name")
 set(NEFCON_VERSION "v1.10.0" CACHE STRING "nefcon version tag")
 
 # Repositories
@@ -37,6 +42,7 @@ set(_NEFCON_REPO "nefarius/nefcon")
 set(DRIVER_DEPS_CACHE "${CMAKE_BINARY_DIR}/_driver_deps" CACHE PATH "Driver dependencies cache")
 set(VMOUSE_DRIVER_DIR "${DRIVER_DEPS_CACHE}/vmouse" CACHE PATH "" FORCE)
 set(VDD_DRIVER_DIR "${DRIVER_DEPS_CACHE}/vdd" CACHE PATH "" FORCE)
+set(VDD_WIN10_DRIVER_DIR "${DRIVER_DEPS_CACHE}/vdd-win10" CACHE PATH "" FORCE)
 set(NEFCON_DRIVER_DIR "${DRIVER_DEPS_CACHE}/nefcon" CACHE PATH "" FORCE)
 
 if(NOT FETCH_DRIVER_DEPS)
@@ -201,18 +207,23 @@ endfunction()
 # ---------------------------------------------------------------------------
 # ZakoVDD  (single zip release asset)
 # ---------------------------------------------------------------------------
-function(_fetch_vdd)
-  message(STATUS "Fetching ZakoVDD ${VDD_DRIVER_VERSION} ...")
-  set(_zip_url "https://github.com/${_VDD_REPO}/releases/download/${VDD_DRIVER_VERSION}/zakovdd.zip")
-  set(_zip "${DRIVER_DEPS_CACHE}/zakovdd-${VDD_DRIVER_VERSION}.zip")
+function(_fetch_vdd_release variant_label version asset_name output_dir cache_prefix)
+  message(STATUS "Fetching ZakoVDD ${variant_label} ${version} ...")
+  set(_zip_url "https://github.com/${_VDD_REPO}/releases/download/${version}/${asset_name}")
+  set(_zip "${DRIVER_DEPS_CACHE}/${cache_prefix}-${version}.zip")
 
   _driver_download("${_zip_url}" "${_zip}")
 
-  if(EXISTS "${_zip}" AND NOT EXISTS "${VDD_DRIVER_DIR}/ZakoVDD.dll")
-    file(MAKE_DIRECTORY "${VDD_DRIVER_DIR}")
-    file(ARCHIVE_EXTRACT INPUT "${_zip}" DESTINATION "${VDD_DRIVER_DIR}")
-    message(STATUS "  Extracted VDD driver to ${VDD_DRIVER_DIR}")
+  if(EXISTS "${_zip}" AND NOT EXISTS "${output_dir}/ZakoVDD.dll")
+    file(MAKE_DIRECTORY "${output_dir}")
+    file(ARCHIVE_EXTRACT INPUT "${_zip}" DESTINATION "${output_dir}")
+    message(STATUS "  Extracted ${variant_label} VDD driver to ${output_dir}")
   endif()
+endfunction()
+
+function(_fetch_vdd)
+  _fetch_vdd_release("latest" "${VDD_DRIVER_VERSION}" "${VDD_DRIVER_ASSET_NAME}" "${VDD_DRIVER_DIR}" "zakovdd")
+  _fetch_vdd_release("win10" "${VDD_WIN10_DRIVER_VERSION}" "${VDD_WIN10_DRIVER_ASSET_NAME}" "${VDD_WIN10_DRIVER_DIR}" "zakovdd-win10")
 endfunction()
 
 # ---------------------------------------------------------------------------
@@ -249,6 +260,7 @@ set(_missing)
 foreach(_f
     "${VMOUSE_DRIVER_DIR}/ZakoVirtualMouse.dll"
     "${VDD_DRIVER_DIR}/ZakoVDD.dll"
+    "${VDD_WIN10_DRIVER_DIR}/ZakoVDD.dll"
     "${NEFCON_DRIVER_DIR}/nefconw.exe")
   if(NOT EXISTS "${_f}")
     list(APPEND _missing "${_f}")

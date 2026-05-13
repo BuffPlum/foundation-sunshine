@@ -46,6 +46,9 @@ set(CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX_SAVED}")
 # Step 3: Run Inno Setup compiler
 add_custom_target(innosetup
     COMMENT "Building Inno Setup installer..."
+
+    # Ensure staging does not retain files from previous layouts
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${CMAKE_BINARY_DIR}/inno_staging"
     
     # Install to staging directory
     COMMAND ${CMAKE_COMMAND} --install "${CMAKE_BINARY_DIR}" --prefix "${CMAKE_BINARY_DIR}/inno_staging"
@@ -70,6 +73,7 @@ add_dependencies(innosetup sunshine)
 # Also provide a convenience target to just generate the staging directory
 add_custom_target(innosetup-staging
     COMMENT "Generating Inno Setup staging directory..."
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${CMAKE_BINARY_DIR}/inno_staging"
     COMMAND ${CMAKE_COMMAND} --install "${CMAKE_BINARY_DIR}" --prefix "${CMAKE_BINARY_DIR}/inno_staging"
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     VERBATIM
