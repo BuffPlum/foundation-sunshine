@@ -62,12 +62,12 @@ sc delete %SERVICE_NAME% >nul 2>&1
 rem Wait for SCM to actually release the record. `sc delete` is async: the
 rem entry sticks around in "marked for deletion" state until every open
 rem handle (services.msc, monitoring tools, our own sc qc above) is closed.
-rem Poll up to ~10s.
+rem Win10 machines can be particularly slow here, so poll up to ~60s.
 set /a SC_DELETE_WAIT=0
 :wait_sc_delete
 sc qc %SERVICE_NAME% >nul 2>&1
 if errorlevel 1 goto :sc_decide_create
-if !SC_DELETE_WAIT! GEQ 10 (
+if !SC_DELETE_WAIT! GEQ 60 (
     echo WARNING: %SERVICE_NAME% still present after sc delete; attempting create anyway.
     goto :sc_decide_create
 )
@@ -112,17 +112,19 @@ rem Run the sc command to create/reconfigure the service
 set "SC_START_TYPE=!SERVICE_START_TYPE!"
 if /I "!SERVICE_START_TYPE!"=="delayed-auto" set "SC_START_TYPE=auto"
 
-rem Retry sc create/config a few times. Common transient failures:
+rem Retry sc create/config for up to ~60s. Common transient failures:
 rem   1072 "service marked for deletion" - SCM hasn't fully released the old record
 rem   1053 "service did not respond to start/control in a timely fashion"
 rem   1056 "an instance of the service is already running"
-rem A short backoff is enough to clear all of them in practice.
+rem Keep the backoff short so normal installs are unaffected, but slow Win10
+rem systems still recover instead of leaving ImagePath missing for the Inno
+rem post-install verifier.
 set /a SC_TRY=0
 :sc_cmd_retry
 sc !SC_CMD! %SERVICE_NAME% binPath= """%SERVICE_BIN%""" start= !SC_START_TYPE! DisplayName= "Sunshine Service"
 if not errorlevel 1 goto :sc_cmd_ok
 set /a SC_TRY+=1
-if !SC_TRY! GEQ 5 (
+if !SC_TRY! GEQ 60 (
     echo ERROR: Failed to !SC_CMD! %SERVICE_NAME% after !SC_TRY! attempts.
     exit /b 1
 )

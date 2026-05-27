@@ -584,9 +584,10 @@ end;
 
 procedure VerifyServiceInstalled();
 var
-  ExpectedPath, ImagePath, Lower, Detail: String;
-  Tries: Integer;
+  ExpectedPath, ImagePath, Lower, Detail, TmpFile, Line: String;
+  Tries, ResultCode, i: Integer;
   Found: Boolean;
+  Lines: TArrayOfString;
 begin
   ExpectedPath := ExpandConstant('{app}\tools\sunshinesvc.exe');
   Lower := Lowercase(ExpectedPath);
@@ -605,15 +606,44 @@ begin
   // Retry a few times: SCM can take a moment to publish ImagePath after a
   // successful `sc create`, especially when the service was just deleted
   // out of "marked for deletion" state inside install-service.bat.
+  //
+  // The Services tree under HKLM\SYSTEM is shared between registry views. Use
+  // HKLM first so the check is not sensitive to Inno/Windows 64-bit view
+  // quirks, then fall back to HKLM64 for existing installers' behaviour.
   ImagePath := '';
+  Found := False;
   for Tries := 1 to 5 do
   begin
-    Found := RegQueryStringValue(HKLM64, 'SYSTEM\CurrentControlSet\Services\SunshineService',
+    Found := RegQueryStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\SunshineService',
                                  'ImagePath', ImagePath);
+    if not Found then
+      Found := RegQueryStringValue(HKLM64, 'SYSTEM\CurrentControlSet\Services\SunshineService',
+                                   'ImagePath', ImagePath);
     if Found and (Pos(Lower, Lowercase(ImagePath)) > 0) then
       Exit;  // happy path
     Sleep(500);
   end;
+
+  // Last-resort verification: query SCM and look for the expected absolute
+  // path anywhere in the output. This remains locale-safe because we do not
+  // parse localized labels such as BINARY_PATH_NAME/NOMBRE_RUTA_BINARIO.
+  TmpFile := ExpandConstant('{tmp}\sc_qc_sunshineservice_verify.txt');
+  ResultCode := -1;
+  Exec(ExpandConstant('{cmd}'), '/c sc qc SunshineService > "' + TmpFile + '" 2>&1',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if (ResultCode = 0) and LoadStringsFromFile(TmpFile, Lines) then
+  begin
+    for i := 0 to GetArrayLength(Lines) - 1 do
+    begin
+      Line := Lines[i];
+      if Pos(Lower, Lowercase(Line)) > 0 then
+      begin
+        DeleteFile(TmpFile);
+        Exit;
+      end;
+    end;
+  end;
+  DeleteFile(TmpFile);
 
   // Build a detailed diagnostic so support reports include the actual
   // mismatch rather than just the generic "could not install or verify"
@@ -625,6 +655,7 @@ begin
   else
     Detail := 'ImagePath: ' + ImagePath;
   Detail := Detail + #13#10 + 'Expected: ' + ExpectedPath;
+  Detail := Detail + #13#10 + 'sc qc exit: ' + IntToStr(ResultCode);
   RaiseException(CustomMessage('MsgServiceInstallFailed') + #13#10 + #13#10 + Detail);
 end;
 
