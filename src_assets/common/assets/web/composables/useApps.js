@@ -2,6 +2,7 @@ import { computed, reactive, ref } from 'vue'
 import { AppService } from '../services/appService.js'
 import { APP_CONSTANTS, ENV_VARS_CONFIG } from '../utils/constants.js'
 import { debounce, deepClone } from '../utils/helpers.js'
+import { apiPostJson } from '../utils/apiFetch.js'
 import { trackEvents } from '../config/firebase.js'
 import {
   applyGameLibraryOverrides,
@@ -18,6 +19,9 @@ import {
 
 const MESSAGE_DURATION = 3000
 const GAME_LIBRARY_SKILL_PREFS_KEY = 'sunshine-game-library-skills:v1'
+const REMOTE_IMAGE_URL_RE = /^https?:\/\//i
+const COVER_LOCALIZATION_CONCURRENCY = 4
+const COVER_LOCALIZATION_FAILED_FIELD = 'cover-localization-failed'
 
 function getStorage() {
   return typeof localStorage !== 'undefined' ? localStorage : null
@@ -56,6 +60,22 @@ function saveEnabledGameLibrarySkillIds(skillIds) {
   } catch {
     // Skill preferences are convenience state; scanning should continue if persistence fails.
   }
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length)
+  let nextIndex = 0
+  const workerCount = Math.min(Math.max(1, concurrency), items.length)
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex
+      nextIndex += 1
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex)
+    }
+  })
+
+  await Promise.all(workers)
+  return results
 }
 
 /**
@@ -805,6 +825,37 @@ export function useApps() {
   // 扫描应用字段处理
   const getScannedAppField = (app, field) => app[field] || app[field.replace(/-/g, '_')] || ''
 
+  const localizeScannedAppCover = async (scannedApp) => {
+    const imagePath = getScannedAppField(scannedApp, 'image-path')
+    if (!REMOTE_IMAGE_URL_RE.test(imagePath)) {
+      return scannedApp
+    }
+
+    try {
+      const result = await apiPostJson('/api/covers/upload', {
+        key: scannedApp.name,
+        url: imagePath,
+      })
+
+      if (result?.path) {
+        return {
+          ...scannedApp,
+          'image-path': result.path,
+          image_path: result.path,
+          'cover-localized': true,
+        }
+      }
+      console.warn('Cover localization did not return a local path:', scannedApp.name, result)
+    } catch (error) {
+      console.warn('Failed to localize scanned cover:', scannedApp.name, error)
+    }
+
+    return {
+      ...scannedApp,
+      [COVER_LOCALIZATION_FAILED_FIELD]: true,
+    }
+  }
+
   const createAppFromScanned = (scannedApp) => ({
     ...APP_CONSTANTS.DEFAULT_APP,
     name: scannedApp.name,
@@ -813,9 +864,23 @@ export function useApps() {
     'image-path': getScannedAppField(scannedApp, 'image-path'),
   })
 
-  const removeFromScannedList = (sourcePath) => {
-    const index = scannedApps.value.findIndex((a) => a.source_path === sourcePath)
-    if (index !== -1) {
+  const didCoverLocalizationFail = (scannedApp) => scannedApp?.[COVER_LOCALIZATION_FAILED_FIELD] === true
+
+  const findScannedAppIndex = (scannedAppOrIndex) => {
+    if (Number.isInteger(scannedAppOrIndex)) {
+      return scannedAppOrIndex
+    }
+
+    let index = scannedApps.value.indexOf(scannedAppOrIndex)
+    if (index === -1 && scannedAppOrIndex?.source_path) {
+      index = scannedApps.value.findIndex((app) => app.source_path === scannedAppOrIndex.source_path)
+    }
+    return index
+  }
+
+  const removeScannedApp = (scannedAppOrIndex) => {
+    const index = findScannedAppIndex(scannedAppOrIndex)
+    if (index >= 0 && index < scannedApps.value.length) {
       scannedApps.value.splice(index, 1)
       if (scannedApps.value.length === 0) {
         showScanResult.value = false
@@ -823,33 +888,43 @@ export function useApps() {
     }
   }
 
-  const addScannedApp = (scannedApp) => {
-    editingApp.value = createDefaultApp({
-      name: scannedApp.name,
-      cmd: scannedApp.cmd,
-      'working-dir': getScannedAppField(scannedApp, 'working-dir'),
-      'image-path': getScannedAppField(scannedApp, 'image-path'),
-    })
-    scannedEditSource.value = { ...scannedApp }
+  const showCoverLocalizationMessage = (localizedApp, successMessage, successType) => {
+    const failed = didCoverLocalizationFail(localizedApp)
+    showMessage(
+      failed ? `${successMessage}，但封面本地化失败，已保留原始封面地址` : successMessage,
+      failed ? APP_CONSTANTS.MESSAGE_TYPES.WARNING : successType
+    )
+  }
 
-    removeFromScannedList(scannedApp.source_path)
-    showMessage(`正在编辑应用: ${scannedApp.name}`, APP_CONSTANTS.MESSAGE_TYPES.INFO)
+  const addScannedApp = async (scannedApp) => {
+    const localizedApp = await localizeScannedAppCover(scannedApp)
+
+    editingApp.value = createDefaultApp({
+      name: localizedApp.name,
+      cmd: localizedApp.cmd,
+      'working-dir': getScannedAppField(localizedApp, 'working-dir'),
+      'image-path': getScannedAppField(localizedApp, 'image-path'),
+    })
+    scannedEditSource.value = { ...localizedApp }
+
+    removeScannedApp(scannedApp)
+    showCoverLocalizationMessage(localizedApp, `正在编辑应用: ${scannedApp.name}`, APP_CONSTANTS.MESSAGE_TYPES.INFO)
     trackEvents.userAction('scanned_app_edit', { name: scannedApp.name })
   }
 
-  const quickAddScannedApp = async (scannedApp, index) => {
+  const quickAddScannedApp = async (scannedApp) => {
     try {
-      apps.value.push(createAppFromScanned(scannedApp))
+      const localizedApp = await localizeScannedAppCover(scannedApp)
+      const appToAdd = createAppFromScanned(localizedApp)
+
+      apps.value.push(appToAdd)
       await AppService.saveApps(apps.value, null)
-      rememberGameLibraryApp(scannedApp, scannedApp)
+      rememberGameLibraryApp(scannedApp, appToAdd)
       await loadApps()
 
-      scannedApps.value.splice(index, 1)
-      if (scannedApps.value.length === 0) {
-        showScanResult.value = false
-      }
+      removeScannedApp(scannedApp)
 
-      showMessage(`已添加应用: ${scannedApp.name}`, APP_CONSTANTS.MESSAGE_TYPES.SUCCESS)
+      showCoverLocalizationMessage(localizedApp, `已添加应用: ${scannedApp.name}`, APP_CONSTANTS.MESSAGE_TYPES.SUCCESS)
       trackEvents.userAction('scanned_app_quick_added', { name: scannedApp.name })
     } catch (error) {
       console.error('快速添加应用失败:', error)
@@ -862,14 +937,26 @@ export function useApps() {
 
     try {
       isSaving.value = true
-      const appsToAdd = scannedApps.value.map(createAppFromScanned)
+      const scannedAppSnapshot = [...scannedApps.value]
+      const localizedScannedApps = await mapWithConcurrency(
+        scannedAppSnapshot,
+        COVER_LOCALIZATION_CONCURRENCY,
+        localizeScannedAppCover
+      )
+      const appsToAdd = localizedScannedApps.map(createAppFromScanned)
 
       apps.value.push(...appsToAdd)
       await AppService.saveApps(apps.value, null)
-      scannedApps.value.forEach((scannedApp, index) => rememberGameLibraryApp(scannedApp, appsToAdd[index]))
+      scannedAppSnapshot.forEach((scannedApp, index) => rememberGameLibraryApp(scannedApp, appsToAdd[index]))
       await loadApps()
 
-      showMessage(`已添加 ${appsToAdd.length} 个应用`, APP_CONSTANTS.MESSAGE_TYPES.SUCCESS)
+      const coverLocalizationFailureCount = localizedScannedApps.filter(didCoverLocalizationFail).length
+      showMessage(
+        coverLocalizationFailureCount > 0
+          ? `已添加 ${appsToAdd.length} 个应用，其中 ${coverLocalizationFailureCount} 个封面本地化失败，已保留原始封面地址`
+          : `已添加 ${appsToAdd.length} 个应用`,
+        coverLocalizationFailureCount > 0 ? APP_CONSTANTS.MESSAGE_TYPES.WARNING : APP_CONSTANTS.MESSAGE_TYPES.SUCCESS
+      )
       trackEvents.userAction('scanned_apps_batch_added', { count: appsToAdd.length })
 
       scannedApps.value = []
@@ -885,13 +972,6 @@ export function useApps() {
   const closeScanResult = () => {
     showScanResult.value = false
     scannedApps.value = []
-  }
-
-  const removeScannedApp = (index) => {
-    scannedApps.value.splice(index, 1)
-    if (scannedApps.value.length === 0) {
-      showScanResult.value = false
-    }
   }
 
   const handleCopySuccess = () => showMessage('复制成功', APP_CONSTANTS.MESSAGE_TYPES.SUCCESS)
