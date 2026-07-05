@@ -458,12 +458,22 @@ import { trackEvents } from '../config/firebase.js'
 import { apiFetch, apiJson } from '../utils/apiFetch.js'
 import { openExternalUrl } from '../utils/helpers.js'
 import { detectSystemLocale } from '../config/i18n.js'
+import { SETUP_WIZARD_LANGUAGE_SAVED_KEY } from '../composables/useSetupWizard.js'
 
 // 向导第一步只暴露 简体中文(zh) / English(en) 两个选项，
 // 因此把系统语言探测结果折叠到这两者之一即可
 function detectInitialWizardLocale() {
   const sys = detectSystemLocale() // 已经过支持白名单过滤，未知语言落到 'en'
   return (sys === 'zh' || sys === 'zh_TW') ? 'zh' : 'en'
+}
+
+function markLanguageSavedForReload() {
+  try {
+    window.sessionStorage.setItem(SETUP_WIZARD_LANGUAGE_SAVED_KEY, 'true')
+  } catch (e) {
+    // If sessionStorage is unavailable, the saved locale still takes effect;
+    // the user may simply see the language step again in Chinese environments.
+  }
 }
 
 export default {
@@ -582,12 +592,16 @@ export default {
     },
     async saveLanguage() {
       try {
-        await apiFetch('/api/config', {
+        const response = await apiFetch('/api/config', {
           method: 'POST',
           body: {
             locale: this.selectedLocale
           },
         })
+        if (!response.ok) {
+          throw new Error(`Failed to save language: HTTP ${response.status}`)
+        }
+        markLanguageSavedForReload()
         // 重新加载页面以应用新语言
         window.location.reload()
       } catch (error) {
