@@ -183,10 +183,10 @@
           </div>
           <div v-else class="scan-result-list">
             <div
-              v-for="{ app, index } in filteredAppItems"
+              v-for="{ app, index, review, reviewReasons } in filteredAppItems"
               :key="`${app.source_path || app.cmd || app.name}-${index}`"
               class="scan-result-item"
-              :class="{ 'scan-result-item--review': needsReview(app) }"
+              :class="{ 'scan-result-item--review': review }"
             >
               <!-- 应用图标 -->
               <div class="scan-app-icon">
@@ -194,6 +194,8 @@
                   v-if="app['image-path']"
                   :src="app['image-path']"
                   :alt="app.name"
+                  loading="lazy"
+                  decoding="async"
                   @error="$event.target.style.display = 'none'"
                 />
                 <svg v-else width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
@@ -223,7 +225,7 @@
                   <span v-if="app['is-game']" class="badge bg-warning text-dark ms-2">
                     <i class="fas fa-gamepad me-1"></i>{{ t('apps.scan_result_game') }}
                   </span>
-                  <span v-if="needsReview(app)" class="badge bg-danger ms-2">
+                  <span v-if="review" class="badge bg-danger ms-2">
                     <i class="fas fa-triangle-exclamation me-1"></i>{{ reviewLabel }}
                   </span>
                 </div>
@@ -245,9 +247,9 @@
                     {{ Math.round(app['ai-cover-confidence'] * 100) }}%
                   </span>
                 </div>
-                <div v-if="needsReview(app)" class="scan-app-review small">
+                <div v-if="review" class="scan-app-review small">
                   <i class="fas fa-triangle-exclamation me-1"></i>
-                  {{ getReviewReasons(app).join(' / ') }}
+                  {{ reviewReasons.join(' / ') }}
                 </div>
                 <div class="scan-app-cmd small">{{ app.cmd }}</div>
                 <div class="scan-app-path small"><i class="fas fa-folder-open me-1"></i>{{ app.source_path }}</div>
@@ -366,79 +368,93 @@ watch(
   }
 )
 
+// 统计信息
+const stats = computed(() => {
+  const totals = {
+    all: props.apps.length,
+    games: 0,
+    executable: 0,
+    shortcut: 0,
+    batch: 0,
+    command: 0,
+    url: 0,
+    steam: 0,
+    epic: 0,
+    gog: 0,
+    review: 0,
+  }
+
+  for (const app of props.apps) {
+    if (app['is-game'] === true) {
+      totals.games += 1
+    }
+    if (Object.prototype.hasOwnProperty.call(totals, app['app-type'])) {
+      totals[app['app-type']] += 1
+    }
+    if (needsReview(app)) {
+      totals.review += 1
+    }
+  }
+
+  return totals
+})
+
 // 当数组内部变化时（quick-add/remove via splice），仅做防御性校正
 watch(
-  () => props.apps.map((app) => ({
-    type: app['app-type'],
-    isGame: app['is-game'] === true,
-    review: needsReview(app),
-  })),
+  () => stats.value,
   () => {
     // 如果当前选中的 type 已经没有对应项了，回退到 'all'
-    if (selectedType.value !== 'all') {
-      const hasType = props.apps.some((app) => app['app-type'] === selectedType.value)
-      if (!hasType) {
-        selectedType.value = 'all'
-      }
+    if (selectedType.value !== 'all' && !stats.value[selectedType.value]) {
+      selectedType.value = 'all'
     }
     // 如果游戏过滤开启但已无游戏项，关闭过滤
-    if (gamesOnly.value && !props.apps.some((app) => app['is-game'] === true)) {
+    if (gamesOnly.value && stats.value.games === 0) {
       gamesOnly.value = false
     }
-    if (reviewOnly.value && !props.apps.some(needsReview)) {
+    if (reviewOnly.value && stats.value.review === 0) {
       reviewOnly.value = false
     }
   }
 )
-
-// 统计信息
-const stats = computed(() => ({
-  all: props.apps.length,
-  games: props.apps.filter((app) => app['is-game'] === true).length,
-  executable: props.apps.filter((app) => app['app-type'] === 'executable').length,
-  shortcut: props.apps.filter((app) => app['app-type'] === 'shortcut').length,
-  batch: props.apps.filter((app) => app['app-type'] === 'batch').length,
-  command: props.apps.filter((app) => app['app-type'] === 'command').length,
-  url: props.apps.filter((app) => app['app-type'] === 'url').length,
-  steam: props.apps.filter((app) => app['app-type'] === 'steam').length,
-  epic: props.apps.filter((app) => app['app-type'] === 'epic').length,
-  gog: props.apps.filter((app) => app['app-type'] === 'gog').length,
-  review: props.apps.filter(needsReview).length,
-}))
 
 // 是否有激活的过滤器
 const hasActiveFilter = computed(() => searchQuery.value || gamesOnly.value || reviewOnly.value || selectedType.value !== 'all')
 
 // 过滤后的应用列表
 const filteredAppItems = computed(() => {
-  let filtered = props.apps.map((app, index) => ({ app, index }))
+  const items = []
+  const type = selectedType.value
+  const query = searchQuery.value ? searchQuery.value.toLowerCase() : ''
 
-  // 按应用类型过滤
-  if (selectedType.value !== 'all') {
-    filtered = filtered.filter(({ app }) => app['app-type'] === selectedType.value)
-  }
-
-  // 按游戏过滤
-  if (gamesOnly.value) {
-    filtered = filtered.filter(({ app }) => app['is-game'] === true)
-  }
-
-  if (reviewOnly.value) {
-    filtered = filtered.filter(({ app }) => needsReview(app))
-  }
-
-  // 按搜索关键词过滤
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase()
-    filtered = filtered.filter(({ app }) => {
+  for (const [index, app] of props.apps.entries()) {
+    if (type !== 'all' && app['app-type'] !== type) {
+      continue
+    }
+    if (gamesOnly.value && app['is-game'] !== true) {
+      continue
+    }
+    const review = needsReview(app)
+    if (reviewOnly.value && !review) {
+      continue
+    }
+    if (query) {
       const name = (app.name || '').toLowerCase()
       const cmd = (app.cmd || '').toLowerCase()
       const sourcePath = (app.source_path || '').toLowerCase()
-      return name.includes(query) || cmd.includes(query) || sourcePath.includes(query)
+      if (!name.includes(query) && !cmd.includes(query) && !sourcePath.includes(query)) {
+        continue
+      }
+    }
+
+    items.push({
+      app,
+      index,
+      review,
+      reviewReasons: review ? getReviewReasons(app) : [],
     })
   }
 
-  return filtered
+  return items
 })
 
 // 应用类型标签

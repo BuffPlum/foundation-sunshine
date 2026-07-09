@@ -586,10 +586,9 @@ sh -c "displayplacer "id:&lt;screenId&gt; res:${SUNSHINE_CLIENT_WIDTH}x${SUNSHIN
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { defineAsyncComponent, ref, onMounted, watch } from 'vue'
 import draggable from 'vuedraggable-es'
 import Navbar from '../components/layout/Navbar.vue'
-import AppEditor from '../components/AppEditor.vue'
 import AppCard from '../components/AppCard.vue'
 import AppListItem from '../components/AppListItem.vue'
 import ScanResultModal from '../components/ScanResultModal.vue'
@@ -598,6 +597,8 @@ import { initFirebase, trackEvents } from '../config/firebase.js'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
+
+const AppEditor = defineAsyncComponent(() => import('../components/AppEditor.vue'))
 
 const isLoaded = ref(false)
 
