@@ -21,6 +21,7 @@
 #include <sstream>
 #include <cstdio>
 #include <ctime>
+#include <thread>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 
@@ -44,6 +45,7 @@
 #include "file_mapping/file_mapping_store.h"
 #include "file_handler.h"
 #include "globals.h"
+#include "http_util.h"
 #include "httpcommon.h"
 #include "logging.h"
 #include "network.h"
@@ -52,8 +54,8 @@
 #include "platform/common.h"
 #include "platform/run_command.h"
 #include "rtsp.h"
-#include "src/display_device/display_device.h"
 #include "src/display_device/to_string.h"
+#include "src/tray/tray_http.h"
 #include "stream.h"
 #include "utility.h"
 #include "uuid.h"
@@ -160,17 +162,7 @@ namespace confighttp {
       send_bad_request("Content type not provided");
       return false;
     }
-    // Extract the media type part before any parameters (e.g., charset)
-    std::string actualContentType = requestContentType->second;
-    size_t semicolonPos = actualContentType.find(';');
-    if (semicolonPos != std::string::npos) {
-      actualContentType = actualContentType.substr(0, semicolonPos);
-    }
-    boost::algorithm::trim(actualContentType);
-    boost::algorithm::to_lower(actualContentType);
-    std::string expectedContentType(contentType);
-    boost::algorithm::to_lower(expectedContentType);
-    if (actualContentType != expectedContentType) {
+    if (!http_util::content_type_matches(requestContentType->second, contentType)) {
       send_bad_request("Content type mismatch");
       return false;
     }
@@ -3192,6 +3184,14 @@ namespace confighttp {
       [](clipboard_http::resp_https_t resp, clipboard_http::req_https_t req) {
         return authenticate(std::move(resp), std::move(req));
       });
+    tray_http::auth_fn tray_local_auth = [](tray_http::resp_https_t resp, tray_http::req_https_t req) {
+        const auto address = net::addr_to_normalized_string(req->remote_endpoint().address());
+        if (config::sunshine.username.empty() && net::from_address(address) == net::PC) {
+          return true;
+        }
+        return authenticate(std::move(resp), std::move(req));
+      };
+    tray_http::register_routes(server, tray_local_auth, tray_local_auth);
     server.resource["^/assets\\/.+$"]["GET"] = getNodeModules;
     server.config.reuse_address = true;
     server.config.address = net::get_bind_address(address_family);
