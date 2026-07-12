@@ -65,6 +65,7 @@
 
 #ifdef _WIN32
   #include <iphlpapi.h>
+  #include "platform/windows/vulkan_hdr_bridge_session.h"
 #endif
 
 using namespace std::literals;
@@ -1446,6 +1447,33 @@ namespace confighttp {
     display_device::session_t::get().reset_persistence();
     outputTree.put("status", true);
   }
+
+#ifdef _WIN32
+  void
+  writeVulkanHdrBridgeStatus(resp_https_t response, bool operation_status) {
+    const auto bridge_status = platf::vulkan_hdr_bridge::status();
+    nlohmann::json output {
+      {"status", operation_status},
+      {"state", bridge_status.state},
+      {"message", bridge_status.message},
+      {"registered", bridge_status.registered},
+      {"artifacts_installed", bridge_status.artifacts_installed},
+    };
+    send_response(std::move(response), output);
+  }
+
+  void
+  getVulkanHdrBridgeStatus(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) return;
+    writeVulkanHdrBridgeStatus(response, true);
+  }
+
+  void
+  validateVulkanHdrBridge(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) return;
+    writeVulkanHdrBridgeStatus(response, platf::vulkan_hdr_bridge::validate_now());
+  }
+#endif
 
   void
   savePassword(resp_https_t response, req_https_t request) {
@@ -3149,6 +3177,10 @@ namespace confighttp {
     server.resource["^/api/restart$"]["GET"] = restart;
     server.resource["^/api/boom$"]["GET"] = boom;
     server.resource["^/api/reset-display-device-persistence$"]["POST"] = resetDisplayDevicePersistence;
+#ifdef _WIN32
+    server.resource["^/api/vulkan-hdr-bridge$"]["GET"] = getVulkanHdrBridgeStatus;
+    server.resource["^/api/vulkan-hdr-bridge/validate$"]["POST"] = validateVulkanHdrBridge;
+#endif
     server.resource["^/api/password$"]["POST"] = savePassword;
     server.resource["^/api/apps/([0-9]+)$"]["DELETE"] = deleteApp;
     server.resource["^/api/apps/batch-delete$"]["POST"] = batchDeleteApps;
