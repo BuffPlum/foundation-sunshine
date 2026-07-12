@@ -9,6 +9,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -16,6 +17,7 @@
 #include "src/config.h"
 #include "src/display_device/display_device.h"
 #include "src/display_device/session.h"
+#include "src/entry_handler.h"
 #include "src/globals.h"
 #include "src/http_util.h"
 #include "src/logging.h"
@@ -32,6 +34,12 @@ namespace tray_http {
     std::atomic<bool> tray_vdd_action_running { false };
     std::atomic<std::uint64_t> tray_vdd_confirmation_operation_id { 0 };
     std::atomic<bool> tray_app_termination_running { false };
+    enum class tray_lifecycle_action_e : std::uint8_t {
+      none,
+      restart,
+      shutdown,
+    };
+    std::atomic<tray_lifecycle_action_e> tray_lifecycle_action { tray_lifecycle_action_e::none };
     std::mutex tray_action_mutex;
 
     thread_pool_util::ThreadPool &
@@ -122,6 +130,14 @@ namespace tray_http {
     send_json(resp_https_t response, const nlohmann::json &body) {
       auto headers = json_response_headers();
       response->write(body.dump(), headers);
+    }
+
+    template <typename Callback>
+    void
+    send_json(resp_https_t response, const nlohmann::json &body, Callback &&callback) {
+      auto headers = json_response_headers();
+      response->write(body.dump(), headers);
+      response->send(std::forward<Callback>(callback));
     }
 
     void
@@ -425,9 +441,23 @@ namespace tray_http {
       }
 
       if (action == "restart") {
-        BOOST_LOG(info) << "Restarting from GUI tray"sv;
-        platf::restart();
+        auto expected = tray_lifecycle_action_e::none;
+        if (!tray_lifecycle_action.compare_exchange_strong(expected, tray_lifecycle_action_e::restart)) {
+          return action_error("A Sunshine restart or shutdown is already in progress");
+        }
+
+        BOOST_LOG(info) << "Restart requested from GUI tray"sv;
         return action_success("Restart requested");
+      }
+
+      if (action == "shutdown") {
+        auto expected = tray_lifecycle_action_e::none;
+        if (!tray_lifecycle_action.compare_exchange_strong(expected, tray_lifecycle_action_e::shutdown)) {
+          return action_error("A Sunshine restart or shutdown is already in progress");
+        }
+
+        BOOST_LOG(info) << "Shutting down Sunshine from GUI tray"sv;
+        return action_success("Sunshine shutdown requested");
       }
 
       if (action == "notification_ack") {
@@ -508,6 +538,28 @@ namespace tray_http {
         auto result = run_tray_action(action, enabled, notification_id, operation_id);
         result["action"] = action;
         result["tray_state"] = tray_state::to_json();
+
+        if (result.value("status", false) && (action == "restart" || action == "shutdown")) {
+          send_json(std::move(response), result, [action](const auto &error) {
+            if (error) {
+              BOOST_LOG(debug) << "Tray "sv << action << " response did not reach the client: "sv << error.message();
+            }
+
+            if (action == "restart") {
+              platf::restart();
+              return;
+            }
+
+#ifdef _WIN32
+            const auto exit_code = GetConsoleWindow() == NULL ? ERROR_SHUTDOWN_IN_PROGRESS : 0;
+#else
+            constexpr auto exit_code = 0;
+#endif
+            lifetime::exit_sunshine(exit_code, true);
+          });
+          return;
+        }
+
         send_json(std::move(response), result);
       }
       catch (const std::exception &e) {
