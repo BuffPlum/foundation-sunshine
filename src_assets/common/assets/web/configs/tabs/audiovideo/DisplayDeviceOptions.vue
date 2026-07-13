@@ -11,18 +11,77 @@ const props = defineProps({
 
 const config = ref(props.config)
 const display_mode_remapping = ref(props.display_mode_remapping || [])
-const vulkanHdrStatus = ref({ state: 'idle', artifacts_installed: true })
+const createVulkanHdrStatus = (overrides = {}) => ({
+  state: 'idle',
+  artifacts_installed: false,
+  display_available: false,
+  ...overrides,
+})
+const vulkanHdrStatus = ref(createVulkanHdrStatus())
+const vulkanHdrStatusLoaded = ref(false)
 const vulkanHdrValidating = ref(false)
 let vulkanHdrStatusTimer
+let vulkanHdrStatusActive = false
 
-const vulkanHdrStatusKey = computed(() => {
-  if (config.value.vdd_vulkan_hdr_bridge !== 'enabled') return 'config.vdd_vulkan_hdr_bridge_status_disabled'
-  if (!vulkanHdrStatus.value.artifacts_installed || vulkanHdrStatus.value.state === 'unavailable') {
-    return 'config.vdd_vulkan_hdr_bridge_status_unavailable'
+const vulkanHdrEnabled = computed({
+  get: () => config.value.vdd_vulkan_hdr_bridge === 'enabled',
+  set: (enabled) => {
+    config.value.vdd_vulkan_hdr_bridge = enabled ? 'enabled' : 'disabled'
+  },
+})
+
+const vulkanHdrViewState = computed(() => {
+  if (!vulkanHdrEnabled.value) {
+    return {
+      statusKey: 'config.vdd_vulkan_hdr_bridge_status_disabled',
+      tone: 'muted',
+      canValidate: false,
+      showValidateAction: false,
+      showValidateHint: false,
+    }
   }
-  const knownStates = ['idle', 'validating', 'enabled', 'error']
-  const state = knownStates.includes(vulkanHdrStatus.value.state) ? vulkanHdrStatus.value.state : 'idle'
-  return `config.vdd_vulkan_hdr_bridge_status_${state}`
+  if (!vulkanHdrStatusLoaded.value) {
+    return {
+      statusKey: 'config.vdd_vulkan_hdr_bridge_status_loading',
+      tone: 'muted',
+      canValidate: false,
+      showValidateAction: false,
+      showValidateHint: false,
+    }
+  }
+
+  const { state, artifacts_installed: artifactsInstalled, display_available: displayAvailable } =
+    vulkanHdrStatus.value
+  if (!artifactsInstalled || state === 'unavailable') {
+    return {
+      statusKey: 'config.vdd_vulkan_hdr_bridge_status_unavailable',
+      tone: 'muted',
+      canValidate: false,
+      showValidateAction: false,
+      showValidateHint: false,
+    }
+  }
+
+  const showValidateAction = state !== 'enabled'
+  const canValidate = showValidateAction && displayAvailable && !vulkanHdrValidating.value
+  if (state === 'idle' && !displayAvailable) {
+    return {
+      statusKey: 'config.vdd_vulkan_hdr_bridge_status_waiting_display',
+      tone: 'muted',
+      canValidate,
+      showValidateAction,
+      showValidateHint: true,
+    }
+  }
+
+  const presentation = {
+    idle: { statusKey: 'config.vdd_vulkan_hdr_bridge_status_idle', tone: 'ready' },
+    validating: { statusKey: 'config.vdd_vulkan_hdr_bridge_status_validating', tone: 'info' },
+    enabled: { statusKey: 'config.vdd_vulkan_hdr_bridge_status_enabled', tone: 'success' },
+    error: { statusKey: 'config.vdd_vulkan_hdr_bridge_status_error', tone: 'warning' },
+  }[state] ?? { statusKey: 'config.vdd_vulkan_hdr_bridge_status_idle', tone: 'ready' }
+
+  return { ...presentation, canValidate, showValidateAction, showValidateHint: false }
 })
 
 async function refreshVulkanHdrStatus() {
@@ -32,7 +91,9 @@ async function refreshVulkanHdrStatus() {
     const result = await response.json()
     if (result.status?.toString() === 'true') vulkanHdrStatus.value = result
   } catch (_) {
-    vulkanHdrStatus.value = { state: 'unavailable', artifacts_installed: false }
+    vulkanHdrStatus.value = createVulkanHdrStatus({ state: 'unavailable' })
+  } finally {
+    vulkanHdrStatusLoaded.value = true
   }
 }
 
@@ -47,17 +108,38 @@ async function validateVulkanHdrBridge() {
     vulkanHdrStatus.value = { ...vulkanHdrStatus.value, state: 'error' }
   } finally {
     vulkanHdrValidating.value = false
+    vulkanHdrStatusLoaded.value = true
   }
 }
 
-onMounted(() => {
+function scheduleVulkanHdrStatusRefresh() {
+  if (!vulkanHdrStatusActive) return
+  if (vulkanHdrStatusTimer !== undefined) window.clearTimeout(vulkanHdrStatusTimer)
+  const delay = vulkanHdrStatus.value.state === 'enabled' ? 3000 : 10000
+  vulkanHdrStatusTimer = window.setTimeout(async () => {
+    if (!document.hidden) await refreshVulkanHdrStatus()
+    scheduleVulkanHdrStatusRefresh()
+  }, delay)
+}
+
+async function handleVisibilityChange() {
+  if (!vulkanHdrStatusActive || document.hidden) return
+  await refreshVulkanHdrStatus()
+  scheduleVulkanHdrStatusRefresh()
+}
+
+onMounted(async () => {
   if (props.platform !== 'windows') return
-  refreshVulkanHdrStatus()
-  vulkanHdrStatusTimer = window.setInterval(refreshVulkanHdrStatus, 3000)
+  vulkanHdrStatusActive = true
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  await refreshVulkanHdrStatus()
+  scheduleVulkanHdrStatusRefresh()
 })
 
 onUnmounted(() => {
-  if (vulkanHdrStatusTimer !== undefined) window.clearInterval(vulkanHdrStatusTimer)
+  vulkanHdrStatusActive = false
+  if (vulkanHdrStatusTimer !== undefined) window.clearTimeout(vulkanHdrStatusTimer)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
 // TODO: Sample for use in PR #2032
@@ -203,32 +285,65 @@ function addRemapping(type) {
                 </select>
               </div>
 
-              <div class="mb-3">
-                <label for="vdd_vulkan_hdr_bridge" class="form-label">
-                  {{ $tp('config.vdd_vulkan_hdr_bridge') }}
-                </label>
-                <select id="vdd_vulkan_hdr_bridge" class="form-select" v-model="config.vdd_vulkan_hdr_bridge">
-                  <option value="enabled">{{ $tp('config.vdd_vulkan_hdr_bridge_automatic') }}</option>
-                  <option value="disabled">{{ $tp('config.vdd_vulkan_hdr_bridge_disabled') }}</option>
-                </select>
-                <div class="form-text">{{ $tp('config.vdd_vulkan_hdr_bridge_desc') }}</div>
-                <div
-                  class="form-text fw-semibold"
-                  :class="{
-                    'text-success': vulkanHdrStatus.state === 'enabled',
-                    'text-danger': vulkanHdrStatus.state === 'error' || vulkanHdrStatus.state === 'unavailable',
-                  }"
-                >
-                  {{ $tp(vulkanHdrStatusKey) }}
+              <div class="vulkan-hdr-card mb-3" :class="{ 'is-disabled': !vulkanHdrEnabled }">
+                <div class="d-flex align-items-start justify-content-between gap-3">
+                  <div>
+                    <label for="vdd_vulkan_hdr_bridge" class="form-label fw-semibold mb-1">
+                      {{ $tp('config.vdd_vulkan_hdr_bridge') }}
+                    </label>
+                    <div id="vdd_vulkan_hdr_bridge_desc" class="form-text mt-0">
+                      {{ $tp('config.vdd_vulkan_hdr_bridge_desc') }}
+                    </div>
+                  </div>
+                  <div class="form-check form-switch flex-shrink-0 mt-1">
+                    <input
+                      id="vdd_vulkan_hdr_bridge"
+                      v-model="vulkanHdrEnabled"
+                      class="form-check-input"
+                      type="checkbox"
+                      role="switch"
+                      aria-describedby="vdd_vulkan_hdr_bridge_desc"
+                    />
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary btn-sm mt-2"
-                  :disabled="config.vdd_vulkan_hdr_bridge !== 'enabled' || vulkanHdrValidating"
-                  @click="validateVulkanHdrBridge"
+
+                <div
+                  class="vulkan-hdr-status mt-3"
+                  :class="`is-${vulkanHdrViewState.tone}`"
+                  role="status"
+                  aria-live="polite"
                 >
-                  {{ $tp('config.vdd_vulkan_hdr_bridge_validate') }}
-                </button>
+                  <span class="vulkan-hdr-status-dot" aria-hidden="true"></span>
+                  <span>{{ $tp(vulkanHdrViewState.statusKey) }}</span>
+                </div>
+
+                <div
+                  v-if="vulkanHdrViewState.showValidateAction"
+                  class="d-flex flex-wrap align-items-center gap-2 mt-3"
+                >
+                  <button
+                    type="button"
+                    class="btn btn-outline-secondary btn-sm"
+                    :disabled="!vulkanHdrViewState.canValidate"
+                    @click="validateVulkanHdrBridge"
+                  >
+                    <span
+                      v-if="vulkanHdrValidating"
+                      class="spinner-border spinner-border-sm me-1"
+                      aria-hidden="true"
+                    ></span>
+                    {{
+                      $tp(
+                        vulkanHdrValidating
+                          ? 'config.vdd_vulkan_hdr_bridge_validating'
+                          : 'config.vdd_vulkan_hdr_bridge_validate',
+                      )
+                    }}
+                  </button>
+                  <small v-if="vulkanHdrViewState.showValidateHint" class="text-body-secondary">
+                    {{ $tp('config.vdd_vulkan_hdr_bridge_validate_hint') }}
+                  </small>
+                </div>
               </div>
 
               <Checkbox
@@ -247,3 +362,58 @@ function addRemapping(type) {
     <template #macos> </template>
   </PlatformLayout>
 </template>
+
+<style scoped>
+.vulkan-hdr-card {
+  padding: 1rem;
+  border: 1px solid var(--bs-border-color);
+  border-left: 3px solid var(--bs-primary);
+  border-radius: var(--bs-border-radius);
+  background: color-mix(in srgb, var(--bs-body-bg) 90%, var(--bs-primary) 10%);
+  transition:
+    border-color 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.vulkan-hdr-card.is-disabled {
+  border-left-color: var(--bs-secondary-color);
+  opacity: 0.78;
+}
+
+.vulkan-hdr-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.vulkan-hdr-status-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 0.2rem color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.vulkan-hdr-status.is-muted {
+  color: var(--bs-secondary-color);
+}
+
+.vulkan-hdr-status.is-ready {
+  color: var(--bs-primary);
+}
+
+.vulkan-hdr-status.is-info {
+  color: var(--bs-info-text-emphasis);
+}
+
+.vulkan-hdr-status.is-success {
+  color: var(--bs-success-text-emphasis);
+}
+
+.vulkan-hdr-status.is-warning {
+  color: var(--bs-warning-text-emphasis);
+}
+</style>

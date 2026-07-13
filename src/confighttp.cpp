@@ -1458,6 +1458,7 @@ namespace confighttp {
       {"message", bridge_status.message},
       {"registered", bridge_status.registered},
       {"artifacts_installed", bridge_status.artifacts_installed},
+      {"display_available", bridge_status.display_available},
     };
     send_response(std::move(response), output);
   }

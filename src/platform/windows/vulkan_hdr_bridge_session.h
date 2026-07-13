@@ -10,6 +10,8 @@ namespace platf::vulkan_hdr_bridge {
     // True while the layer is active or its cleanup still needs to be retried.
     bool registered;
     bool artifacts_installed;
+    // True when an active Zako display is available for an on-demand probe.
+    bool display_available;
   };
 
   // Remove a registration left by a terminated Sunshine process.

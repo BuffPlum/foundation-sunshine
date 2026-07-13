@@ -350,7 +350,7 @@ namespace platf::vulkan_hdr_bridge {
       const auto manifest = directory / kManifestName;
       const auto layer_dll = directory / kLayerDllName;
       const auto probe = directory / kProbeName;
-      if (!std::filesystem::exists(manifest) || !std::filesystem::exists(layer_dll) || !std::filesystem::exists(probe)) {
+      if (!artifacts_installed()) {
         BOOST_LOG(warning) << "Vulkan HDR bridge artifacts are not installed under " << directory.string();
         set_status("unavailable", "Vulkan HDR bridge files are not installed.");
         return false;
@@ -436,7 +436,13 @@ namespace platf::vulkan_hdr_bridge {
   status_t
   status() {
     std::lock_guard lock(state_mutex);
-    return { current_state, current_message, registered || cleanup_pending, artifacts_installed() };
+    return {
+      current_state,
+      current_message,
+      registered || cleanup_pending,
+      artifacts_installed(),
+      !active_zako_display().empty(),
+    };
   }
 
 }  // namespace platf::vulkan_hdr_bridge
