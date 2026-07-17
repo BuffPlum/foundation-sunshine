@@ -390,6 +390,14 @@ namespace display_device::vdd_ioctl {
 
     if (!ok) {
       const DWORD err = GetLastError();
+      if (err == ERROR_NOT_READY) {
+        if (log_failures) {
+          BOOST_LOG(debug) << "vdd_ioctl: frame-channel producer is not ready yet"
+                           << " (status=" << frame_channel_open_status_name(frame_channel_open_status::not_ready)
+                           << ", win32=" << err << ")";
+        }
+        return frame_channel_open_status::not_ready;
+      }
       if (err == ERROR_INVALID_FUNCTION ||
           err == ERROR_NOT_SUPPORTED ||
           err == ERROR_INVALID_PARAMETER) {
@@ -397,7 +405,9 @@ namespace display_device::vdd_ioctl {
         return frame_channel_open_status::unsupported;
       }
       if (log_failures) {
-        BOOST_LOG(warning) << "vdd_ioctl: DeviceIoControl(IOCTL_VDD_OPEN_FRAME_CHANNEL) failed (err=" << err << ")";
+        BOOST_LOG(warning) << "vdd_ioctl: DeviceIoControl(IOCTL_VDD_OPEN_FRAME_CHANNEL) failed"
+                           << " (status=" << frame_channel_open_status_name(frame_channel_open_status::failed)
+                           << ", win32=" << err << ")";
       }
       return frame_channel_open_status::failed;
     }
