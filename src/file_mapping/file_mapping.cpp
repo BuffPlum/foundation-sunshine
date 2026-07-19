@@ -264,7 +264,10 @@ namespace file_mapping {
       mapping.name = std::string { static_cast<char>('A' + index), ':' };
       mapping.local_root = root;
       mapping.mode = drive_type == DRIVE_CDROM ? access_mode_e::read : access_mode_e::readwrite;
-      mapping.allow_delete = false;
+      // The BuffPlum full-disk variant intentionally exposes file-manager
+      // operations to an authenticated paired client. Destructive requests are
+      // still checked by the RPC layer and can never remove a drive root.
+      mapping.allow_delete = drive_type != DRIVE_CDROM;
       mapping.allow_execute = false;
       mapping.follow_reparse_points = false;
       mapping.max_file_size = 0;
@@ -279,7 +282,8 @@ namespace file_mapping {
       mapping.name = "/";
       mapping.local_root = root;
       mapping.mode = access_mode_e::readwrite;
-      mapping.allow_delete = false;
+      // Match the Windows full-disk behavior on other desktop platforms.
+      mapping.allow_delete = true;
       mapping.allow_execute = false;
       mapping.follow_reparse_points = false;
       mapping.max_file_size = 0;

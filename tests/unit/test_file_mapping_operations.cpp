@@ -49,6 +49,7 @@ namespace {
   make_writable_context(const fs::path &root) {
     auto context = make_context(root);
     context.mappings[0].mode = file_mapping::access_mode_e::readwrite;
+    context.mappings[0].allow_delete = true;
     return context;
   }
 }  // namespace
@@ -249,19 +250,110 @@ TEST(FileMappingOperations, RejectsUploadToReadOnlyMapping) {
   EXPECT_FALSE(fs::exists(tree.root / "received.txt"));
 }
 
-TEST(FileMappingOperations, RejectsOverwriteAndUploadPathTraversal) {
+TEST(FileMappingOperations, RejectsImplicitOverwriteAndUploadPathTraversal) {
   temp_tree_t tree;
   auto context = make_writable_context(tree.root);
 
   auto overwrite = file_mapping::rpc::parse_control_message(
-    R"({"type":"write","id":24,"mapping":"host-test","path":"hello.txt","upload_id":"upload-3","offset":0,"begin":true,"complete":true,"data":"eA=="})");
+    // Omitting conflict_policy preserves the protocol's backward-compatible
+    // Reject default; replacement requires an explicit Overwrite request.
+    R"({"type":"write","id":24,"mapping":"host-test","path":"hello.txt","upload_id":"upload-3","offset":0,"total_size":1,"begin":true,"complete":true,"data":"eA=="})");
   ASSERT_TRUE(overwrite.ok) << overwrite.error;
   auto overwrite_result = file_mapping::operations::execute_control_message(overwrite, context);
   EXPECT_EQ(overwrite_result["code"], "already_exists");
 
   auto traversal = file_mapping::rpc::parse_control_message(
-    R"({"type":"write","id":25,"mapping":"host-test","path":"../outside.txt","upload_id":"upload-4","offset":0,"begin":true,"complete":true,"data":"eA=="})");
+    R"({"type":"write","id":25,"mapping":"host-test","path":"../outside.txt","upload_id":"upload-4","offset":0,"total_size":1,"begin":true,"complete":true,"data":"eA=="})");
   ASSERT_TRUE(traversal.ok) << traversal.error;
   auto traversal_result = file_mapping::operations::execute_control_message(traversal, context);
   EXPECT_EQ(traversal_result["code"], "invalid_path");
+}
+
+TEST(FileMappingOperations, KeepsBothUploadsWithExplorerStyleSuffixes) {
+  temp_tree_t tree;
+  auto context = make_writable_context(tree.root);
+
+  auto first = file_mapping::rpc::parse_control_message(
+    R"({"type":"write","id":30,"mapping":"host-test","path":"hello.txt","upload_id":"keep-1","offset":0,"total_size":1,"begin":true,"complete":true,"conflict_policy":"keep_both","data":"eA=="})");
+  ASSERT_TRUE(first.ok) << first.error;
+  auto first_result = file_mapping::operations::execute_control_message(first, context);
+  ASSERT_EQ(first_result["type"], "result") << first_result.dump();
+  EXPECT_EQ(first_result["path"], "hello (1).txt");
+  EXPECT_TRUE(fs::exists(tree.root / "hello (1).txt"));
+
+  auto second = file_mapping::rpc::parse_control_message(
+    R"({"type":"write","id":31,"mapping":"host-test","path":"hello.txt","upload_id":"keep-2","offset":0,"total_size":1,"begin":true,"complete":true,"conflict_policy":"keep_both","data":"eQ=="})");
+  ASSERT_TRUE(second.ok) << second.error;
+  auto second_result = file_mapping::operations::execute_control_message(second, context);
+  ASSERT_EQ(second_result["type"], "result") << second_result.dump();
+  EXPECT_EQ(second_result["path"], "hello (2).txt");
+  EXPECT_TRUE(fs::exists(tree.root / "hello (2).txt"));
+}
+
+TEST(FileMappingOperations, OverwritesExistingFileWhenExplicitlyRequested) {
+  temp_tree_t tree;
+  auto context = make_writable_context(tree.root);
+
+  auto parsed = file_mapping::rpc::parse_control_message(
+    R"({"type":"write","id":32,"mapping":"host-test","path":"hello.txt","upload_id":"overwrite-1","offset":0,"total_size":3,"begin":true,"complete":true,"conflict_policy":"overwrite","data":"bmV3"})");
+  ASSERT_TRUE(parsed.ok) << parsed.error;
+  auto result = file_mapping::operations::execute_control_message(parsed, context);
+  ASSERT_EQ(result["type"], "result") << result.dump();
+
+  std::ifstream in(tree.root / "hello.txt", std::ios::binary);
+  std::string contents((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_EQ(contents, "new");
+}
+
+TEST(FileMappingOperations, RenamesCreatesAndDeletesItems) {
+  temp_tree_t tree;
+  auto context = make_writable_context(tree.root);
+
+  auto mkdir = file_mapping::rpc::parse_control_message(
+    R"({"type":"mkdir","id":33,"mapping":"host-test","path":"nested","conflict_policy":"keep_both"})");
+  ASSERT_TRUE(mkdir.ok) << mkdir.error;
+  auto mkdir_result = file_mapping::operations::execute_control_message(mkdir, context);
+  ASSERT_EQ(mkdir_result["type"], "result") << mkdir_result.dump();
+  EXPECT_EQ(mkdir_result["path"], "nested (1)");
+  EXPECT_TRUE(fs::is_directory(tree.root / "nested (1)"));
+
+  auto create = file_mapping::rpc::parse_control_message(
+    R"({"type":"write","id":34,"mapping":"host-test","path":"empty.txt","upload_id":"empty-1","offset":0,"total_size":0,"begin":true,"complete":true,"conflict_policy":"reject","data":""})");
+  ASSERT_TRUE(create.ok) << create.error;
+  auto create_result = file_mapping::operations::execute_control_message(create, context);
+  ASSERT_EQ(create_result["type"], "result") << create_result.dump();
+  EXPECT_TRUE(fs::is_regular_file(tree.root / "empty.txt"));
+
+  auto rename = file_mapping::rpc::parse_control_message(
+    R"({"type":"rename","id":35,"mapping":"host-test","path":"empty.txt","destination_path":"renamed.txt"})");
+  ASSERT_TRUE(rename.ok) << rename.error;
+  auto rename_result = file_mapping::operations::execute_control_message(rename, context);
+  ASSERT_EQ(rename_result["type"], "result") << rename_result.dump();
+  EXPECT_TRUE(fs::is_regular_file(tree.root / "renamed.txt"));
+
+  auto remove = file_mapping::rpc::parse_control_message(
+    // A custom raw-string delimiter avoids the ")" in the Explorer-style
+    // suffix terminating the C++ literal early.
+    R"json({"type":"delete","id":36,"mapping":"host-test","path":"nested (1)","recursive":true})json");
+  ASSERT_TRUE(remove.ok) << remove.error;
+  auto remove_result = file_mapping::operations::execute_control_message(remove, context);
+  ASSERT_EQ(remove_result["type"], "result") << remove_result.dump();
+  EXPECT_FALSE(fs::exists(tree.root / "nested (1)"));
+}
+
+TEST(FileMappingOperations, NeverRenamesOrDeletesMappingRoot) {
+  temp_tree_t tree;
+  auto context = make_writable_context(tree.root);
+
+  auto rename = file_mapping::rpc::parse_control_message(
+    R"({"type":"rename","id":37,"mapping":"host-test","path":"","destination_path":"renamed-root"})");
+  ASSERT_TRUE(rename.ok) << rename.error;
+  auto rename_result = file_mapping::operations::execute_control_message(rename, context);
+  EXPECT_EQ(rename_result["code"], "bad_request");
+
+  auto remove = file_mapping::rpc::parse_control_message(
+    R"({"type":"delete","id":38,"mapping":"host-test","path":"","recursive":true})");
+  ASSERT_TRUE(remove.ok) << remove.error;
+  auto remove_result = file_mapping::operations::execute_control_message(remove, context);
+  EXPECT_EQ(remove_result["code"], "bad_request");
 }

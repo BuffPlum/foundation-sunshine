@@ -17,6 +17,10 @@
 #include <string_view>
 #include <system_error>
 
+#ifdef _WIN32
+  #include <windows.h>
+#endif
+
 namespace file_mapping::operations {
   namespace {
     namespace fs = std::filesystem;
@@ -289,6 +293,98 @@ namespace file_mapping::operations {
       return true;
     }
 
+    enum class conflict_policy_e {
+      reject,
+      overwrite,
+      keep_both
+    };
+
+    bool
+    optional_conflict_policy(const nlohmann::json &body, conflict_policy_e &out, nlohmann::json &error) {
+      std::string value = "reject";
+      if (body.contains("conflict_policy")) {
+        if (!body["conflict_policy"].is_string()) {
+          error = error_response(body, "bad_request", "field must be a string: conflict_policy");
+          return false;
+        }
+        value = body["conflict_policy"].get<std::string>();
+      }
+
+      if (value == "reject") {
+        out = conflict_policy_e::reject;
+      }
+      else if (value == "overwrite") {
+        out = conflict_policy_e::overwrite;
+      }
+      else if (value == "keep_both") {
+        out = conflict_policy_e::keep_both;
+      }
+      else {
+        error = error_response(body, "bad_request", "conflict_policy must be reject, overwrite, or keep_both");
+        return false;
+      }
+      return true;
+    }
+
+    fs::path
+    unique_sibling_path(const fs::path &requested) {
+      const auto parent = requested.parent_path();
+      const auto extension = requested.extension();
+      const auto stem = requested.stem();
+
+      // Match Windows Explorer's familiar "name (1).ext" convention. The
+      // lookup happens on the host immediately before commit so two clients
+      // cannot accidentally choose the same suffix based on a stale listing.
+      std::error_code ec;
+      for (std::uint32_t index = 1; index < std::numeric_limits<std::uint32_t>::max(); ++index) {
+        const auto filename = stem.native() +
+                              fs::path(" (" + std::to_string(index) + ")").native() +
+                              extension.native();
+        auto candidate = parent / filename;
+        const bool exists = fs::exists(candidate, ec);
+        // Permission and I/O errors must not turn into a practically infinite
+        // suffix search. Return failure and let the RPC surface the filesystem
+        // problem to the client.
+        if (ec) {
+          return {};
+        }
+        if (!exists) {
+          return candidate;
+        }
+      }
+      return {};
+    }
+
+    std::string
+    remote_path_with_filename(std::string_view requested, const fs::path &actual) {
+      const auto slash = requested.find_last_of('/');
+      const auto filename = actual.filename().generic_string();
+      return slash == std::string_view::npos ?
+               filename :
+               std::string { requested.substr(0, slash + 1) } + filename;
+    }
+
+    bool
+    commit_upload(const fs::path &staging, const fs::path &destination, bool overwrite, std::error_code &ec) {
+#ifdef _WIN32
+      if (overwrite) {
+        // std::filesystem::rename() cannot replace an existing file on
+        // Windows. MoveFileExW preserves the staging-file transaction while
+        // explicitly opting into replacement.
+        if (MoveFileExW(staging.c_str(),
+                        destination.c_str(),
+                        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0) {
+          ec.clear();
+          return true;
+        }
+        ec = std::error_code(static_cast<int>(GetLastError()), std::system_category());
+        return false;
+      }
+#endif
+      fs::rename(staging, destination, ec);
+      return !ec;
+    }
+
     std::optional<mapping_t>
     require_mapping(const nlohmann::json &body, const execution_context_t &context, nlohmann::json &error) {
       std::string mapping_id;
@@ -496,15 +592,29 @@ namespace file_mapping::operations {
       }
 
       std::error_code ec;
+      conflict_policy_e conflict_policy;
+      if (!optional_conflict_policy(body, conflict_policy, error)) {
+        return error;
+      }
       if (fs::exists(resolved.resolved_path, ec)) {
-        if (fs::is_directory(resolved.resolved_path, ec)) {
+        if (fs::is_directory(resolved.resolved_path, ec) &&
+            conflict_policy != conflict_policy_e::keep_both) {
           auto out = result_response(body);
           out["mapping"] = mapping->id;
           out["path"] = remote_path;
           out["created"] = false;
           return out;
         }
-        return error_response(body, "already_exists", "a non-directory item already exists at path");
+        if (conflict_policy == conflict_policy_e::keep_both) {
+          resolved.resolved_path = unique_sibling_path(resolved.resolved_path);
+          if (resolved.resolved_path.empty()) {
+            return error_response(body, "filesystem_error", "could not allocate a unique directory name");
+          }
+          remote_path = remote_path_with_filename(remote_path, resolved.resolved_path);
+        }
+        else {
+          return error_response(body, "already_exists", "a non-directory item already exists at path");
+        }
       }
       ec.clear();
 
@@ -520,6 +630,115 @@ namespace file_mapping::operations {
       out["mapping"] = mapping->id;
       out["path"] = remote_path;
       out["created"] = true;
+      return out;
+    }
+
+    nlohmann::json
+    execute_rename(const rpc::parse_result_t &message, const execution_context_t &context) {
+      const auto &body = message.body;
+      nlohmann::json error;
+      const auto mapping = require_mapping(body, context, error);
+      if (!mapping) {
+        return error;
+      }
+      if (mapping->mode != access_mode_e::readwrite) {
+        return error_response(body, "read_only", "mapping does not allow file changes");
+      }
+
+      std::string remote_path;
+      std::string destination_path;
+      if (!require_string_field(body, "path", remote_path) || remote_path.empty() ||
+          !require_string_field(body, "destination_path", destination_path) || destination_path.empty()) {
+        return error_response(body, "bad_request", "rename requires non-empty path and destination_path");
+      }
+
+      auto source = resolve_path(*mapping, remote_path, true);
+      auto destination = resolve_path(*mapping, destination_path, false);
+      if (!source.ok) {
+        return error_response(body, resolve_error_code(source.error), source.message);
+      }
+      if (!destination.ok) {
+        return error_response(body, resolve_error_code(destination.error), destination.message);
+      }
+
+      std::error_code ec;
+      const auto root = fs::weakly_canonical(mapping->local_root, ec);
+      if (ec) {
+        return error_response(body, "filesystem_error", ec.message());
+      }
+      if (source.resolved_path == root || destination.resolved_path == root) {
+        return error_response(body, "bad_request", "a mapping root cannot be renamed");
+      }
+      if (fs::exists(destination.resolved_path, ec)) {
+        return error_response(body, "already_exists", "rename destination already exists");
+      }
+      ec.clear();
+      if (!fs::is_directory(destination.resolved_path.parent_path(), ec)) {
+        return error_response(body, "parent_not_found", "rename destination parent does not exist");
+      }
+      ec.clear();
+
+      fs::rename(source.resolved_path, destination.resolved_path, ec);
+      if (ec) {
+        return error_response(body, "filesystem_error", ec.message());
+      }
+
+      auto out = result_response(body);
+      out["mapping"] = mapping->id;
+      out["path"] = destination_path;
+      return out;
+    }
+
+    nlohmann::json
+    execute_remove(const rpc::parse_result_t &message, const execution_context_t &context) {
+      const auto &body = message.body;
+      nlohmann::json error;
+      const auto mapping = require_mapping(body, context, error);
+      if (!mapping) {
+        return error;
+      }
+      if (mapping->mode != access_mode_e::readwrite || !mapping->allow_delete) {
+        return error_response(body, "delete_not_allowed", "mapping does not allow deletion");
+      }
+
+      std::string remote_path;
+      bool recursive = false;
+      if (!require_string_field(body, "path", remote_path) || remote_path.empty()) {
+        return error_response(body, "bad_request", "delete requires a non-empty path");
+      }
+      if (!optional_bool_field(body, "recursive", false, recursive, error)) {
+        return error;
+      }
+
+      auto resolved = resolve_path(*mapping, remote_path, true);
+      if (!resolved.ok) {
+        return error_response(body, resolve_error_code(resolved.error), resolved.message);
+      }
+
+      std::error_code ec;
+      const auto root = fs::weakly_canonical(mapping->local_root, ec);
+      if (ec) {
+        return error_response(body, "filesystem_error", ec.message());
+      }
+      if (resolved.resolved_path == root || is_upload_staging_name(resolved.resolved_path.filename().generic_string())) {
+        return error_response(body, "bad_request", "a mapping root or upload staging file cannot be deleted");
+      }
+
+      std::uintmax_t removed = 0;
+      if (recursive && fs::is_directory(resolved.resolved_path, ec)) {
+        removed = fs::remove_all(resolved.resolved_path, ec);
+      }
+      else {
+        removed = fs::remove(resolved.resolved_path, ec) ? 1 : 0;
+      }
+      if (ec) {
+        return error_response(body, "filesystem_error", ec.message());
+      }
+
+      auto out = result_response(body);
+      out["mapping"] = mapping->id;
+      out["path"] = remote_path;
+      out["removed"] = removed;
       return out;
     }
 
@@ -560,13 +779,15 @@ namespace file_mapping::operations {
       std::uint64_t total_size = 0;
       bool begin = false;
       bool complete = false;
+      conflict_policy_e conflict_policy;
       if (!body.contains("total_size")) {
         return error_response(body, "bad_request", "missing non-negative integer field: total_size");
       }
       if (!optional_uint64_field(body, "offset", 0, offset, error) ||
           !optional_uint64_field(body, "total_size", 0, total_size, error) ||
           !optional_bool_field(body, "begin", false, begin, error) ||
-          !optional_bool_field(body, "complete", false, complete, error)) {
+          !optional_bool_field(body, "complete", false, complete, error) ||
+          !optional_conflict_policy(body, conflict_policy, error)) {
         return error;
       }
       if (begin && offset != 0) {
@@ -605,31 +826,47 @@ namespace file_mapping::operations {
       }
       ec.clear();
 
-      const auto staging = upload_staging_path(parent, upload_id, remote_path);
       if (begin) {
         if (fs::exists(resolved.resolved_path, ec)) {
-          return error_response(body, "already_exists", "destination file already exists");
+          if (conflict_policy == conflict_policy_e::reject) {
+            return error_response(body, "already_exists", "destination file already exists");
+          }
+          if (!fs::is_regular_file(resolved.resolved_path, ec) &&
+              conflict_policy == conflict_policy_e::overwrite) {
+            return error_response(body, "already_exists", "overwrite destination is not a regular file");
+          }
+          if (conflict_policy == conflict_policy_e::keep_both) {
+            resolved.resolved_path = unique_sibling_path(resolved.resolved_path);
+            if (resolved.resolved_path.empty()) {
+              return error_response(body, "filesystem_error", "could not allocate a unique file name");
+            }
+            remote_path = remote_path_with_filename(remote_path, resolved.resolved_path);
+          }
         }
         ec.clear();
+        const auto actual_staging = upload_staging_path(
+          resolved.resolved_path.parent_path(), upload_id, remote_path);
         cleanup_stale_uploads(parent);
-        fs::remove(staging, ec);
+        fs::remove(actual_staging, ec);
         ec.clear();
-        std::ofstream create(staging, std::ios::binary | std::ios::trunc);
+        std::ofstream create(actual_staging, std::ios::binary | std::ios::trunc);
         if (!create) {
           return error_response(body, "open_failed", "failed to create upload staging file");
         }
       }
-      else if (!fs::is_regular_file(staging, ec)) {
+      const auto actual_staging = upload_staging_path(
+        resolved.resolved_path.parent_path(), upload_id, remote_path);
+      if (!begin && !fs::is_regular_file(actual_staging, ec)) {
         return error_response(body, "upload_not_found", "upload staging file was not found");
       }
       ec.clear();
 
-      const auto staging_size = file_size_or_zero(staging, ec);
+      const auto staging_size = file_size_or_zero(actual_staging, ec);
       if (staging_size != offset) {
         return error_response(body, "offset_mismatch", "write offset does not match received upload size");
       }
 
-      std::ofstream out_file(staging, std::ios::binary | std::ios::app);
+      std::ofstream out_file(actual_staging, std::ios::binary | std::ios::app);
       if (!out_file) {
         return error_response(body, "open_failed", "failed to open upload staging file");
       }
@@ -645,17 +882,33 @@ namespace file_mapping::operations {
       const auto next_offset = offset + bytes->size();
       if (complete) {
         if (total_size != 0 && next_offset != total_size) {
-          fs::remove(staging, ec);
+          fs::remove(actual_staging, ec);
           return error_response(body, "size_mismatch", "received size does not match declared total_size");
         }
         if (fs::exists(resolved.resolved_path, ec)) {
-          ec.clear();
-          fs::remove(staging, ec);
-          return error_response(body, "already_exists", "destination file already exists");
+          if (conflict_policy == conflict_policy_e::reject) {
+            ec.clear();
+            fs::remove(actual_staging, ec);
+            return error_response(body, "already_exists", "destination file already exists");
+          }
+          if (conflict_policy == conflict_policy_e::keep_both) {
+            resolved.resolved_path = unique_sibling_path(resolved.resolved_path);
+            if (resolved.resolved_path.empty()) {
+              fs::remove(actual_staging, ec);
+              return error_response(body, "filesystem_error", "could not allocate a unique file name");
+            }
+            remote_path = remote_path_with_filename(remote_path, resolved.resolved_path);
+          }
+          else if (!fs::is_regular_file(resolved.resolved_path, ec)) {
+            fs::remove(actual_staging, ec);
+            return error_response(body, "already_exists", "overwrite destination is not a regular file");
+          }
         }
         ec.clear();
-        fs::rename(staging, resolved.resolved_path, ec);
-        if (ec) {
+        if (!commit_upload(actual_staging,
+                           resolved.resolved_path,
+                           conflict_policy == conflict_policy_e::overwrite,
+                           ec)) {
           return error_response(body, "commit_failed", ec.message());
         }
       }
@@ -677,6 +930,10 @@ namespace file_mapping::operations {
     if (mapping.mode == access_mode_e::readwrite) {
       capabilities.push_back("write");
       capabilities.push_back("mkdir");
+      capabilities.push_back("rename");
+      if (mapping.allow_delete) {
+        capabilities.push_back("delete");
+      }
     }
     return {
       { "id", mapping.id },
@@ -700,6 +957,10 @@ namespace file_mapping::operations {
         return execute_write(message, context);
       case rpc::message_type_e::mkdir:
         return execute_mkdir(message, context);
+      case rpc::message_type_e::rename:
+        return execute_rename(message, context);
+      case rpc::message_type_e::remove:
+        return execute_remove(message, context);
       default:
         return error_response(message.body, "unsupported_operation", "file mapping operation is not supported");
     }

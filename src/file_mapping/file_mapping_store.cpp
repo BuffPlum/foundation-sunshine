@@ -83,7 +83,11 @@ namespace file_mapping_store {
 
     void
     normalize_safe_mapping(file_mapping::mapping_t &mapping) {
-      mapping.allow_delete = false;
+      // Deletion is meaningful only for read/write mappings. Execution and
+      // reparse-point traversal remain unsupported even in the full-disk fork.
+      if (mapping.mode != file_mapping::access_mode_e::readwrite) {
+        mapping.allow_delete = false;
+      }
       mapping.allow_execute = false;
       mapping.follow_reparse_points = false;
     }
@@ -267,8 +271,9 @@ namespace file_mapping_store {
       if (!patch["allow_delete"].is_boolean()) {
         return { false, {}, "allow_delete must be a boolean" };
       }
-      if (patch["allow_delete"].get<bool>()) {
-        return { false, {}, "allow_delete is not supported; uploads never overwrite or delete remote files" };
+      if (patch["allow_delete"].get<bool>() &&
+          updated.mode != file_mapping::access_mode_e::readwrite) {
+        return { false, {}, "allow_delete requires readwrite mode" };
       }
       updated.allow_delete = patch["allow_delete"].get<bool>();
     }

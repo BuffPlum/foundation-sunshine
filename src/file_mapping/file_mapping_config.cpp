@@ -211,8 +211,8 @@ namespace file_mapping_config {
         continue;
       }
       mapping.clients = parse_clients(item);
-      if (mapping.allow_delete) {
-        result.warnings.push_back(prefix + "allow_delete ignored; uploads never overwrite or delete remote files");
+      if (mapping.allow_delete && mapping.mode != file_mapping::access_mode_e::readwrite) {
+        result.warnings.push_back(prefix + "allow_delete requires readwrite mode");
         mapping.allow_delete = false;
       }
       if (mapping.allow_execute) {
