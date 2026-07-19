@@ -14,6 +14,9 @@
 
 ---
 
+> [!WARNING]
+> **BuffPlum が独立して保守する非公式版です。** 全ディスクのファイル転送では、Sunshine プロセスがアクセスできるすべてのドライブがペアリング済みクライアントに公開されます。個人所有の端末を信頼できる LAN 内で接続する場合にのみ使用してください。[SECURITY.md](SECURITY.md) を確認し、この Fork 固有の問題は [BuffPlum/foundation-sunshine](https://github.com/BuffPlum/foundation-sunshine/issues) に報告してください。
+
 LizardByte/Sunshineをベースにしたフォークで、完全なドキュメントサポートを提供します [Read the Docs](https://docs.qq.com/aio/DSGdQc3htbFJjSFdO?p=YTpMj5JNNdB5hEKJhhqlSB)。
 
 **Sunshine-Foundation** はMoonlight用のセルフホスト型ゲームストリームホストです。このフォークバージョンはオリジナルのSunshineに基づき、様々なストリーミング端末とWindowsホスト間のゲームストリーミング体験を向上させることに重点を置いた大幅な改良が加えられています：

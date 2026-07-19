@@ -1,5 +1,7 @@
 # Windows 双端目录映射实施方案
 
+> **当前实现状态（2026-07-18）：** 配套的 Foundation Sunshine 与 Moonlight fork 已包含 WebUI 共享管理、只读主机快照、可选 `readwrite` 共享、`mkdir`/分块 `write` RPC，以及 `Send to Host` / `Sent to Host` 客户端流程。本文保留分阶段设计历史，后文把这些能力写成“尚未实现”的条目属于历史待办；面向用户的规则请看 [file-transfer.md](file-transfer.md)。
+
 ## 目标
 
 在 Sunshine 与自研 moonlight-qt 均运行于 Windows 的前提下，实现会话级双端目录映射：
@@ -308,13 +310,15 @@ wss://<sunshine-host>:<https-port>/api/v1/file-mapping/session
 }
 ```
 
-### Current Sunshine read-only RPC
+### Current Sunshine RPC (read/write)
 
-当前 Sunshine 第一版只读执行器已实现：
+当前 Sunshine 执行器已实现：
 
 - `list`：`{"type":"list","id":1,"mapping":"host-test","path":""}`
 - `stat`：`{"type":"stat","id":2,"mapping":"host-test","path":"hello.txt"}`
 - `read` / `read_chunk`：`{"type":"read","id":3,"mapping":"host-test","path":"hello.txt","offset":0,"length":65536}`
+- `mkdir`：读写共享可创建缺失的相对目录。
+- `write`：读写共享使用 `upload_id`、`offset`、`total_size`、`begin`、`complete` 和 Base64 `data` 分块写入。
 - `open`：当前 read-only executor 不提供 handle 语义，必须返回 `unsupported_operation`，不能隐式路由到 `read`。
 
 当前 `read` 响应暂时使用 JSON + base64：
@@ -335,11 +339,11 @@ wss://<sunshine-host>:<https-port>/api/v1/file-mapping/session
 }
 ```
 
-这用于第一阶段冒烟和 Moonlight 侧 UI/流程打通。大文件传输仍应按设计升级为 WebSocket binary frame，避免长期使用 JSON base64 承载大块数据。
+读取和写入目前都使用 JSON + Base64，并由服务端限制单个写入分块最大 512 KiB；WebSocket binary frame 处理器仍保留为后续性能升级的兼容入口。
 
-### Current moonlight-qt smoke client
+### Current moonlight-qt client
 
-当前 moonlight-qt 已新增 `app/streaming/FileMappingClient` 原型，用于打通第一阶段 `capability -> WSS -> hello -> list -> read`：
+当前 moonlight-qt 已接入 `FileMappingClient`、`FileMappingTransfer` 和文件映射 UI，完整流程为 `capability -> WSS -> hello -> list/read`，以及读写共享的 `mkdir/write`：
 
 - `fetchCapability()` 请求 Sunshine GameStream HTTPS 端口上的 `GET /api/v1/file-mapping/capability`，即 `NvComputer::activeHttpsPort`，通常是 `47984`，不是 Web UI 配置端口。
 - 请求仍携带 Moonlight `IdentityManager::getUniqueId()` 作为 `client_uuid` query 和 `X-File-Mapping-Client-UUID` header，主要用于诊断和兼容；Sunshine 授权以 HTTPS 客户端证书推导出的配对 UUID 为准。

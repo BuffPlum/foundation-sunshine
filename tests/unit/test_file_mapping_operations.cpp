@@ -44,6 +44,13 @@ namespace {
     context.mappings.push_back(std::move(mapping));
     return context;
   }
+
+  file_mapping::operations::execution_context_t
+  make_writable_context(const fs::path &root) {
+    auto context = make_context(root);
+    context.mappings[0].mode = file_mapping::access_mode_e::readwrite;
+    return context;
+  }
 }  // namespace
 
 TEST(FileMappingOperations, ListsDirectoryEntries) {
@@ -191,4 +198,70 @@ TEST(FileMappingOperations, UsesMappingProviderForRuntimeUpdates) {
   EXPECT_TRUE(result["ok"].get<bool>());
   EXPECT_EQ(result["mapping"].get<std::string>(), created.mapping.id);
   EXPECT_EQ(result["entries"].size(), 2);
+}
+
+TEST(FileMappingOperations, UploadsFileInTransactionalChunks) {
+  temp_tree_t tree;
+  auto context = make_writable_context(tree.root);
+
+  auto first = file_mapping::rpc::parse_control_message(
+    R"({"type":"write","id":20,"mapping":"host-test","path":"received.txt","upload_id":"upload-1","offset":0,"total_size":11,"begin":true,"complete":false,"data":"aGVsbG8g"})");
+  ASSERT_TRUE(first.ok) << first.error;
+  auto first_result = file_mapping::operations::execute_control_message(first, context);
+  ASSERT_EQ(first_result["type"], "result") << first_result.dump();
+  EXPECT_EQ(first_result["next_offset"], 6);
+  EXPECT_FALSE(fs::exists(tree.root / "received.txt"));
+
+  auto last = file_mapping::rpc::parse_control_message(
+    R"({"type":"write","id":21,"mapping":"host-test","path":"received.txt","upload_id":"upload-1","offset":6,"total_size":11,"begin":false,"complete":true,"data":"d29ybGQ="})");
+  ASSERT_TRUE(last.ok) << last.error;
+  auto last_result = file_mapping::operations::execute_control_message(last, context);
+  ASSERT_EQ(last_result["type"], "result") << last_result.dump();
+  EXPECT_TRUE(last_result["completed"].get<bool>());
+
+  std::ifstream in(tree.root / "received.txt", std::ios::binary);
+  std::string contents((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_EQ(contents, "hello world");
+}
+
+TEST(FileMappingOperations, CreatesUploadDirectories) {
+  temp_tree_t tree;
+  auto context = make_writable_context(tree.root);
+  auto parsed = file_mapping::rpc::parse_control_message(
+    R"({"type":"mkdir","id":22,"mapping":"host-test","path":"incoming"})");
+  ASSERT_TRUE(parsed.ok) << parsed.error;
+
+  auto result = file_mapping::operations::execute_control_message(parsed, context);
+  ASSERT_EQ(result["type"], "result") << result.dump();
+  EXPECT_TRUE(fs::is_directory(tree.root / "incoming"));
+}
+
+TEST(FileMappingOperations, RejectsUploadToReadOnlyMapping) {
+  temp_tree_t tree;
+  auto context = make_context(tree.root);
+  auto parsed = file_mapping::rpc::parse_control_message(
+    R"({"type":"write","id":23,"mapping":"host-test","path":"received.txt","upload_id":"upload-2","offset":0,"begin":true,"complete":true,"data":"eA=="})");
+  ASSERT_TRUE(parsed.ok) << parsed.error;
+
+  auto result = file_mapping::operations::execute_control_message(parsed, context);
+  EXPECT_EQ(result["type"], "error");
+  EXPECT_EQ(result["code"], "read_only");
+  EXPECT_FALSE(fs::exists(tree.root / "received.txt"));
+}
+
+TEST(FileMappingOperations, RejectsOverwriteAndUploadPathTraversal) {
+  temp_tree_t tree;
+  auto context = make_writable_context(tree.root);
+
+  auto overwrite = file_mapping::rpc::parse_control_message(
+    R"({"type":"write","id":24,"mapping":"host-test","path":"hello.txt","upload_id":"upload-3","offset":0,"begin":true,"complete":true,"data":"eA=="})");
+  ASSERT_TRUE(overwrite.ok) << overwrite.error;
+  auto overwrite_result = file_mapping::operations::execute_control_message(overwrite, context);
+  EXPECT_EQ(overwrite_result["code"], "already_exists");
+
+  auto traversal = file_mapping::rpc::parse_control_message(
+    R"({"type":"write","id":25,"mapping":"host-test","path":"../outside.txt","upload_id":"upload-4","offset":0,"begin":true,"complete":true,"data":"eA=="})");
+  ASSERT_TRUE(traversal.ok) << traversal.error;
+  auto traversal_result = file_mapping::operations::execute_control_message(traversal, context);
+  EXPECT_EQ(traversal_result["code"], "invalid_path");
 }

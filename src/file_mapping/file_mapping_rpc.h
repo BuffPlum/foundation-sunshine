@@ -30,6 +30,7 @@ namespace file_mapping::rpc {
     stat,
     open,
     read,
+    write,
     close,
     mkdir,
     rename,

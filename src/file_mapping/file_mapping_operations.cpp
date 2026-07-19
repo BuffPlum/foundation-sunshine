@@ -1,16 +1,20 @@
 /**
  * @file src/file_mapping_operations.cpp
- * @brief Read-only file mapping RPC execution helpers.
+ * @brief File mapping RPC execution helpers.
  */
 #include "file_mapping_operations.h"
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <string_view>
 #include <system_error>
 
 namespace file_mapping::operations {
@@ -147,6 +151,86 @@ namespace file_mapping::operations {
       return out;
     }
 
+    std::optional<std::vector<unsigned char>>
+    base64_decode(std::string_view text) {
+      auto decode_char = [](unsigned char ch) -> int {
+        if (ch >= 'A' && ch <= 'Z') return ch - 'A';
+        if (ch >= 'a' && ch <= 'z') return ch - 'a' + 26;
+        if (ch >= '0' && ch <= '9') return ch - '0' + 52;
+        if (ch == '+') return 62;
+        if (ch == '/') return 63;
+        return -1;
+      };
+
+      if (text.size() % 4 != 0) {
+        return std::nullopt;
+      }
+
+      std::vector<unsigned char> out;
+      out.reserve((text.size() / 4) * 3);
+      for (std::size_t i = 0; i < text.size(); i += 4) {
+        const auto c0 = decode_char(static_cast<unsigned char>(text[i]));
+        const auto c1 = decode_char(static_cast<unsigned char>(text[i + 1]));
+        const auto c2 = text[i + 2] == '=' ? -2 : decode_char(static_cast<unsigned char>(text[i + 2]));
+        const auto c3 = text[i + 3] == '=' ? -2 : decode_char(static_cast<unsigned char>(text[i + 3]));
+        if (c0 < 0 || c1 < 0 || c2 == -1 || c3 == -1 ||
+            (c2 == -2 && c3 != -2) ||
+            (c2 == -2 && i + 4 != text.size()) ||
+            (c3 == -2 && i + 4 != text.size())) {
+          return std::nullopt;
+        }
+
+        out.push_back(static_cast<unsigned char>((c0 << 2) | (c1 >> 4)));
+        if (c2 != -2) {
+          out.push_back(static_cast<unsigned char>(((c1 & 0x0f) << 4) | (c2 >> 2)));
+        }
+        if (c3 != -2) {
+          out.push_back(static_cast<unsigned char>(((c2 & 0x03) << 6) | c3));
+        }
+      }
+      return out;
+    }
+
+    bool
+    is_valid_upload_id(std::string_view id) {
+      return !id.empty() && id.size() <= 96 &&
+             std::all_of(id.begin(), id.end(), [](unsigned char ch) {
+               return std::isalnum(ch) || ch == '-' || ch == '_';
+             });
+    }
+
+    bool
+    is_upload_staging_name(std::string_view name) {
+      return name.starts_with(".moonlight-upload-") && name.ends_with(".part");
+    }
+
+    fs::path
+    upload_staging_path(const fs::path &parent, std::string_view upload_id, std::string_view remote_path) {
+      const auto path_hash = std::hash<std::string_view> {}(remote_path);
+      return parent / (".moonlight-upload-" + std::string { upload_id } + "-" + std::to_string(path_hash) + ".part");
+    }
+
+    void
+    cleanup_stale_uploads(const fs::path &parent) {
+      std::error_code ec;
+      const auto cutoff = fs::file_time_type::clock::now() - std::chrono::hours(24);
+      for (const auto &entry : fs::directory_iterator(parent, ec)) {
+        if (ec) {
+          return;
+        }
+        const auto name = entry.path().filename().generic_string();
+        if (!is_upload_staging_name(name) || !entry.is_regular_file(ec)) {
+          ec.clear();
+          continue;
+        }
+        const auto modified = entry.last_write_time(ec);
+        if (!ec && modified < cutoff) {
+          fs::remove(entry.path(), ec);
+        }
+        ec.clear();
+      }
+    }
+
     bool
     require_string_field(const nlohmann::json &body, const char *name, std::string &out) {
       if (!body.contains(name) || !body[name].is_string()) {
@@ -189,6 +273,20 @@ namespace file_mapping::operations {
       }
       error = error_response(body, "bad_request", std::string("field must be a non-negative integer: ") + name);
       return false;
+    }
+
+    bool
+    optional_bool_field(const nlohmann::json &body, const char *name, bool fallback, bool &out, nlohmann::json &error) {
+      if (!body.contains(name)) {
+        out = fallback;
+        return true;
+      }
+      if (!body[name].is_boolean()) {
+        error = error_response(body, "bad_request", std::string("field must be a boolean: ") + name);
+        return false;
+      }
+      out = body[name].get<bool>();
+      return true;
     }
 
     std::optional<mapping_t>
@@ -252,6 +350,9 @@ namespace file_mapping::operations {
         }
 
         std::error_code entry_ec;
+        if (is_upload_staging_name(entry.path().filename().generic_string())) {
+          continue;
+        }
         const auto kind = file_kind(entry, entry_ec);
         const auto name = entry.path().filename().generic_string();
         nlohmann::json item {
@@ -372,16 +473,217 @@ namespace file_mapping::operations {
       out["data"] = base64_encode(bytes);
       return out;
     }
+
+    nlohmann::json
+    execute_mkdir(const rpc::parse_result_t &message, const execution_context_t &context) {
+      const auto &body = message.body;
+      nlohmann::json error;
+      const auto mapping = require_mapping(body, context, error);
+      if (!mapping) {
+        return error;
+      }
+      if (mapping->mode != access_mode_e::readwrite) {
+        return error_response(body, "read_only", "mapping does not allow uploads");
+      }
+
+      std::string remote_path;
+      if (!require_string_field(body, "path", remote_path) || remote_path.empty()) {
+        return error_response(body, "bad_request", "missing non-empty string field: path");
+      }
+      auto resolved = resolve_path(*mapping, remote_path, false);
+      if (!resolved.ok) {
+        return error_response(body, resolve_error_code(resolved.error), resolved.message);
+      }
+
+      std::error_code ec;
+      if (fs::exists(resolved.resolved_path, ec)) {
+        if (fs::is_directory(resolved.resolved_path, ec)) {
+          auto out = result_response(body);
+          out["mapping"] = mapping->id;
+          out["path"] = remote_path;
+          out["created"] = false;
+          return out;
+        }
+        return error_response(body, "already_exists", "a non-directory item already exists at path");
+      }
+      ec.clear();
+
+      const auto parent = resolved.resolved_path.parent_path();
+      if (!fs::is_directory(parent, ec)) {
+        return error_response(body, "parent_not_found", "parent directory does not exist");
+      }
+      if (!fs::create_directory(resolved.resolved_path, ec) || ec) {
+        return error_response(body, "filesystem_error", ec ? ec.message() : "failed to create directory");
+      }
+
+      auto out = result_response(body);
+      out["mapping"] = mapping->id;
+      out["path"] = remote_path;
+      out["created"] = true;
+      return out;
+    }
+
+    nlohmann::json
+    execute_write(const rpc::parse_result_t &message, const execution_context_t &context) {
+      const auto &body = message.body;
+      nlohmann::json error;
+      const auto mapping = require_mapping(body, context, error);
+      if (!mapping) {
+        return error;
+      }
+      if (mapping->mode != access_mode_e::readwrite) {
+        return error_response(body, "read_only", "mapping does not allow uploads");
+      }
+
+      std::string remote_path;
+      std::string upload_id;
+      std::string encoded;
+      if (!require_string_field(body, "path", remote_path) || remote_path.empty()) {
+        return error_response(body, "bad_request", "missing non-empty string field: path");
+      }
+      if (!require_string_field(body, "upload_id", upload_id) || !is_valid_upload_id(upload_id)) {
+        return error_response(body, "bad_request", "upload_id must contain only letters, digits, '-' or '_'");
+      }
+      if (!require_string_field(body, "data", encoded)) {
+        return error_response(body, "bad_request", "missing string field: data");
+      }
+
+      auto bytes = base64_decode(encoded);
+      if (!bytes) {
+        return error_response(body, "bad_request", "data is not valid base64");
+      }
+      if (bytes->size() > context.max_write_bytes) {
+        return error_response(body, "chunk_too_large", "write chunk exceeds the configured limit");
+      }
+
+      std::uint64_t offset = 0;
+      std::uint64_t total_size = 0;
+      bool begin = false;
+      bool complete = false;
+      if (!body.contains("total_size")) {
+        return error_response(body, "bad_request", "missing non-negative integer field: total_size");
+      }
+      if (!optional_uint64_field(body, "offset", 0, offset, error) ||
+          !optional_uint64_field(body, "total_size", 0, total_size, error) ||
+          !optional_bool_field(body, "begin", false, begin, error) ||
+          !optional_bool_field(body, "complete", false, complete, error)) {
+        return error;
+      }
+      if (begin && offset != 0) {
+        return error_response(body, "bad_request", "the first upload chunk must start at offset zero");
+      }
+      if (mapping->max_file_size != 0 &&
+          (total_size > mapping->max_file_size ||
+            offset > mapping->max_file_size ||
+            bytes->size() > mapping->max_file_size - offset)) {
+        return error_response(body, "file_too_large", "upload exceeds mapping max_file_size");
+      }
+      if (total_size != 0 && offset + bytes->size() > total_size) {
+        return error_response(body, "bad_request", "write chunk exceeds declared total_size");
+      }
+
+      auto resolved = resolve_path(*mapping, remote_path, false);
+      if (!resolved.ok) {
+        return error_response(body, resolve_error_code(resolved.error), resolved.message);
+      }
+      std::error_code root_ec;
+      const auto canonical_root = fs::weakly_canonical(mapping->local_root, root_ec);
+      if (root_ec) {
+        return error_response(body, "filesystem_error", root_ec.message());
+      }
+      if (resolved.resolved_path == canonical_root) {
+        return error_response(body, "bad_request", "upload path must name a file");
+      }
+      if (is_upload_staging_name(resolved.resolved_path.filename().generic_string())) {
+        return error_response(body, "invalid_path", "upload path uses a reserved staging file name");
+      }
+
+      std::error_code ec;
+      const auto parent = resolved.resolved_path.parent_path();
+      if (!fs::is_directory(parent, ec)) {
+        return error_response(body, "parent_not_found", "parent directory does not exist");
+      }
+      ec.clear();
+
+      const auto staging = upload_staging_path(parent, upload_id, remote_path);
+      if (begin) {
+        if (fs::exists(resolved.resolved_path, ec)) {
+          return error_response(body, "already_exists", "destination file already exists");
+        }
+        ec.clear();
+        cleanup_stale_uploads(parent);
+        fs::remove(staging, ec);
+        ec.clear();
+        std::ofstream create(staging, std::ios::binary | std::ios::trunc);
+        if (!create) {
+          return error_response(body, "open_failed", "failed to create upload staging file");
+        }
+      }
+      else if (!fs::is_regular_file(staging, ec)) {
+        return error_response(body, "upload_not_found", "upload staging file was not found");
+      }
+      ec.clear();
+
+      const auto staging_size = file_size_or_zero(staging, ec);
+      if (staging_size != offset) {
+        return error_response(body, "offset_mismatch", "write offset does not match received upload size");
+      }
+
+      std::ofstream out_file(staging, std::ios::binary | std::ios::app);
+      if (!out_file) {
+        return error_response(body, "open_failed", "failed to open upload staging file");
+      }
+      if (!bytes->empty()) {
+        out_file.write(reinterpret_cast<const char *>(bytes->data()), static_cast<std::streamsize>(bytes->size()));
+      }
+      out_file.flush();
+      if (!out_file) {
+        return error_response(body, "write_failed", "failed to write upload chunk");
+      }
+      out_file.close();
+
+      const auto next_offset = offset + bytes->size();
+      if (complete) {
+        if (total_size != 0 && next_offset != total_size) {
+          fs::remove(staging, ec);
+          return error_response(body, "size_mismatch", "received size does not match declared total_size");
+        }
+        if (fs::exists(resolved.resolved_path, ec)) {
+          ec.clear();
+          fs::remove(staging, ec);
+          return error_response(body, "already_exists", "destination file already exists");
+        }
+        ec.clear();
+        fs::rename(staging, resolved.resolved_path, ec);
+        if (ec) {
+          return error_response(body, "commit_failed", ec.message());
+        }
+      }
+
+      auto out = result_response(body);
+      out["mapping"] = mapping->id;
+      out["path"] = remote_path;
+      out["upload_id"] = upload_id;
+      out["bytes_written"] = bytes->size();
+      out["next_offset"] = next_offset;
+      out["completed"] = complete;
+      return out;
+    }
   }  // namespace
 
   nlohmann::json
   mapping_to_json(const mapping_t &mapping) {
+    auto capabilities = nlohmann::json::array({ "list", "stat", "read" });
+    if (mapping.mode == access_mode_e::readwrite) {
+      capabilities.push_back("write");
+      capabilities.push_back("mkdir");
+    }
     return {
       { "id", mapping.id },
       { "name", mapping.name },
       { "side", "host" },
       { "mode", mapping.mode == access_mode_e::read ? "read" : "readwrite" },
-      { "capabilities", nlohmann::json::array({ "list", "stat", "read" }) }
+      { "capabilities", std::move(capabilities) }
     };
   }
 
@@ -394,8 +696,12 @@ namespace file_mapping::operations {
         return execute_stat(message, context);
       case rpc::message_type_e::read:
         return execute_read(message, context);
+      case rpc::message_type_e::write:
+        return execute_write(message, context);
+      case rpc::message_type_e::mkdir:
+        return execute_mkdir(message, context);
       default:
-        return error_response(message.body, "unsupported_operation", "operation is not supported by the read-only file mapping executor");
+        return error_response(message.body, "unsupported_operation", "file mapping operation is not supported");
     }
   }
 }  // namespace file_mapping::operations

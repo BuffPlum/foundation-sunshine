@@ -62,7 +62,7 @@ TEST(FileMappingConfig, SkipsMissingDirectories) {
   EXPECT_FALSE(result.warnings.empty());
 }
 
-TEST(FileMappingConfig, IgnoresDangerousPermissionsInReadOnlyPhase) {
+TEST(FileMappingConfig, EnablesUploadsButIgnoresDangerousPermissions) {
   temp_config_mapping_t temp;
   const auto json =
     "[{\"id\":\"host-test\",\"path\":\"" +
@@ -71,11 +71,11 @@ TEST(FileMappingConfig, IgnoresDangerousPermissionsInReadOnlyPhase) {
 
   auto result = file_mapping_config::parse_mappings_json(json);
   ASSERT_EQ(result.mappings.size(), 1);
-  EXPECT_EQ(result.mappings[0].mode, file_mapping::access_mode_e::read);
+  EXPECT_EQ(result.mappings[0].mode, file_mapping::access_mode_e::readwrite);
   EXPECT_FALSE(result.mappings[0].allow_delete);
   EXPECT_FALSE(result.mappings[0].allow_execute);
   EXPECT_FALSE(result.mappings[0].follow_reparse_points);
-  EXPECT_GE(result.warnings.size(), 4);
+  EXPECT_GE(result.warnings.size(), 3);
 }
 
 TEST(FileMappingConfig, SkipsMappingWithMalformedOptionalFields) {

@@ -53,6 +53,11 @@ TEST(FileMappingRpc, ParsesReadChunkAlias) {
   auto cancel = file_mapping::rpc::parse_control_message(R"({"type":"cancel_job","id":2,"job_id":"job-1"})");
   ASSERT_TRUE(cancel.ok) << cancel.error;
   EXPECT_EQ(cancel.type, file_mapping::rpc::message_type_e::cancel);
+
+  auto write = file_mapping::rpc::parse_control_message(R"({"type":"write_chunk","id":3})");
+  ASSERT_TRUE(write.ok) << write.error;
+  EXPECT_EQ(write.type, file_mapping::rpc::message_type_e::write);
+  EXPECT_EQ(file_mapping::rpc::to_string(write.type), "write");
 }
 
 TEST(FileMappingRpc, SerializesTransferJob) {

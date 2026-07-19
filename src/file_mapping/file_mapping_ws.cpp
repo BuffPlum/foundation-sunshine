@@ -73,6 +73,9 @@ namespace file_mapping_ws {
           return file_mapping::rpc::operation_e::stat;
         case file_mapping::rpc::message_type_e::read:
           return file_mapping::rpc::operation_e::read;
+        case file_mapping::rpc::message_type_e::write:
+        case file_mapping::rpc::message_type_e::mkdir:
+          return file_mapping::rpc::operation_e::upload;
         default:
           return file_mapping::rpc::operation_e::download;
       }
@@ -241,6 +244,9 @@ namespace file_mapping_ws {
       if (reply.contains("bytes_read") && reply["bytes_read"].is_number_unsigned()) {
         job.transferred_bytes = reply["bytes_read"].get<std::uint64_t>();
       }
+      if (reply.contains("bytes_written") && reply["bytes_written"].is_number_unsigned()) {
+        job.transferred_bytes = reply["bytes_written"].get<std::uint64_t>();
+      }
     }
 
     reply["job_id"] = job.job_id;
@@ -255,10 +261,19 @@ namespace file_mapping_ws {
     file_mapping::rpc::transfer_job_t job;
     job.job_id = "job-" + std::to_string(next_job_id_++);
     job.operation = operation_from_message_type(parsed.type);
-    job.source.side = "host";
-    job.source.mapping = optional_string(parsed.body, "mapping");
-    job.source.path = optional_string(parsed.body, "path");
-    job.destination.side = "client";
+    if (parsed.type == file_mapping::rpc::message_type_e::write ||
+        parsed.type == file_mapping::rpc::message_type_e::mkdir) {
+      job.source.side = "client";
+      job.destination.side = "host";
+      job.destination.mapping = optional_string(parsed.body, "mapping");
+      job.destination.path = optional_string(parsed.body, "path");
+    }
+    else {
+      job.source.side = "host";
+      job.source.mapping = optional_string(parsed.body, "mapping");
+      job.source.path = optional_string(parsed.body, "path");
+      job.destination.side = "client";
+    }
     return job;
   }
 

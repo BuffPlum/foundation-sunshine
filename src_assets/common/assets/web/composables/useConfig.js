@@ -105,7 +105,7 @@ const DEFAULT_TABS = [
   },
   {
     id: 'files',
-    name: 'Config Files',
+    name: 'File Transfer',
     options: {
       file_apps: '',
       credentials_file: '',

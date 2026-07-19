@@ -1,6 +1,6 @@
 /**
  * @file src/file_mapping_operations.h
- * @brief Read-only file mapping RPC execution helpers.
+ * @brief File mapping RPC execution helpers.
  */
 #pragma once
 
@@ -20,6 +20,7 @@ namespace file_mapping::operations {
     std::function<std::vector<mapping_t>()> mapping_provider;
     std::string peer_uuid;
     std::uint32_t max_read_bytes = 1024 * 1024;
+    std::uint32_t max_write_bytes = 512 * 1024;
     std::uint32_t max_list_entries = 4096;
   };
 

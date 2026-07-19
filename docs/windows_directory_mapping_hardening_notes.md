@@ -1,5 +1,7 @@
 # Windows 双端目录映射补强记录
 
+> **当前实现状态（2026-07-18）：** 双向传输已经在配套 fork 中可用。上传使用 JSON + Base64 分块、临时文件暂存和原子提交；本文剩余条目是后续加固方向，不是当前传输流程的前置条件。面向用户的规则请看 [file-transfer.md](file-transfer.md)。
+
 本文是 `docs/windows_directory_mapping_design.md` 的补充记录，用于固化正式实施前必须纳入的可靠性、安全性和产品化补强点。
 
 ## 结论

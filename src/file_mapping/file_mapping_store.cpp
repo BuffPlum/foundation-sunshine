@@ -82,8 +82,7 @@ namespace file_mapping_store {
     }
 
     void
-    normalize_read_only_mapping(file_mapping::mapping_t &mapping) {
-      mapping.mode = file_mapping::access_mode_e::read;
+    normalize_safe_mapping(file_mapping::mapping_t &mapping) {
       mapping.allow_delete = false;
       mapping.allow_execute = false;
       mapping.follow_reparse_points = false;
@@ -156,7 +155,7 @@ namespace file_mapping_store {
   void
   store_t::replace(std::vector<file_mapping::mapping_t> mappings) {
     for (auto &mapping : mappings) {
-      normalize_read_only_mapping(mapping);
+      normalize_safe_mapping(mapping);
     }
 
     std::scoped_lock lock { mutex_ };
@@ -258,7 +257,7 @@ namespace file_mapping_store {
         updated.mode = file_mapping::access_mode_e::read;
       }
       else if (mode == "readwrite") {
-        return { false, {}, "readwrite mode is not supported in the read-only phase" };
+        updated.mode = file_mapping::access_mode_e::readwrite;
       }
       else {
         return { false, {}, "mode must be read or readwrite" };
@@ -269,7 +268,7 @@ namespace file_mapping_store {
         return { false, {}, "allow_delete must be a boolean" };
       }
       if (patch["allow_delete"].get<bool>()) {
-        return { false, {}, "allow_delete is not supported in the read-only phase" };
+        return { false, {}, "allow_delete is not supported; uploads never overwrite or delete remote files" };
       }
       updated.allow_delete = patch["allow_delete"].get<bool>();
     }
@@ -312,7 +311,7 @@ namespace file_mapping_store {
       updated.clients = std::move(clients);
     }
 
-    normalize_read_only_mapping(updated);
+    normalize_safe_mapping(updated);
     *it = updated;
     return { true, updated, {} };
   }

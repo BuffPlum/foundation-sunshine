@@ -14,7 +14,14 @@
 
 ---
 
-A fork based on LizardByte/Sunshine, providing comprehensive documentation support [Read the Docs](https://docs.qq.com/aio/DSGdQc3htbFJjSFdO?p=YTpMj5JNNdB5hEKJhhqlSB).
+> [!WARNING]
+> **This is an unofficial version independently maintained by BuffPlum.** It is not supported by the AlkaidLab, LizardByte, or Moonlight upstream projects. Full-disk file transfer exposes every drive readable by the Sunshine process to an authenticated paired client. Use it only between personal devices on a trusted LAN and read the [security notice](SECURITY.md) before installing it.
+>
+> Upstream currently does not merge or maintain the full-disk transfer feature because of its security boundary, testing burden, and long-term maintenance cost. Report fork-specific problems to [BuffPlum/foundation-sunshine Issues](https://github.com/BuffPlum/foundation-sunshine/issues), not upstream.
+>
+> Independent versions use `vYYYY.MDD-buffplum.N`. See the [BuffPlum release process](.github/BUFFPLUM_RELEASES.md).
+
+An independently maintained BuffPlum fork based on [AlkaidLab/foundation-sunshine](https://github.com/AlkaidLab/foundation-sunshine). Use it with [BuffPlum/moonlight-qt](https://github.com/BuffPlum/moonlight-qt), and download packages from [BuffPlum Releases](https://github.com/BuffPlum/foundation-sunshine/releases).
 
 **Sunshine-Foundation** is a self-hosted game stream host for Moonlight. This forked version introduces significant improvements over the original Sunshine, focusing on enhancing the game streaming experience for various streaming terminal devices connected to a Windows host:
 
@@ -166,7 +173,7 @@ Troubleshooting path when encountering issues:
 1. Check the [Usage Documentation](https://docs.qq.com/aio/DSGdQc3htbFJjSFdO?p=YTpMj5JNNdB5hEKJhhqlSB) [LizardByte Documentation](https://docs.lizardbyte.dev/projects/sunshine/latest/)
 2. Enable detailed log level in settings to find relevant information
 3. [Join the QQ group for help](https://qm.qq.com/cgi-bin/qm/qr?k=5qnkzSaLIrIaU4FvumftZH_6Hg7fUuLD&jump_from=webapi)
-4. [Use two letters!](https://uuyc.163.com/)
+4. Report BuffPlum-specific problems in [this fork's issue tracker](https://github.com/BuffPlum/foundation-sunshine/issues)
 
 **Issue Feedback Labels:**
 - `hdr-support` - HDR-related issues
@@ -181,7 +188,7 @@ Troubleshooting path when encountering issues:
 
 ## Join the Community
 
-We welcome everyone to participate in discussions and contribute code!
+This repository is the primary home of the BuffPlum edition. Fork-specific features are maintained here rather than proposed upstream.
 [![Join QQ Group](https://pub.idqqimg.com/wpa/images/group.png 'Join QQ Group')](https://qm.qq.com/cgi-bin/qm/qr?k=WC2PSZ3Q6Hk6j8U_DG9S7522GPtItk0m&jump_from=webapi&authKey=zVDLFrS83s/0Xg3hMbkMeAqI7xoHXaM3sxZIF/u9JW7qO/D8xd0npytVBC2lOS+z)
 
 ## Star History

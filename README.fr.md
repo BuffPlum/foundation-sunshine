@@ -14,6 +14,9 @@
 
 ---
 
+> [!WARNING]
+> **Version non officielle maintenue indépendamment par BuffPlum.** Le transfert de fichiers sur tous les disques expose au client appairé chaque disque accessible au processus Sunshine. Utilisez cette fonction uniquement entre appareils personnels sur un réseau local de confiance. Consultez [SECURITY.md](SECURITY.md) et signalez les problèmes spécifiques au fork dans [BuffPlum/foundation-sunshine](https://github.com/BuffPlum/foundation-sunshine/issues).
+
 Fork basé sur LizardByte/Sunshine, offrant une documentation complète [Lire la documentation](https://docs.qq.com/aio/DSGdQc3htbFJjSFdO?p=YTpMj5JNNdB5hEKJhhqlSB).
 
 **Sunshine-Foundation** est un hôte de streaming de jeu auto-hébergé pour Moonlight. Cette version forkée apporte des améliorations significatives par rapport à Sunshine original, en se concentrant sur l'amélioration de l'expérience de streaming de jeu entre divers appareils terminaux et l'hôte Windows :

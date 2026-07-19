@@ -120,13 +120,14 @@ namespace {
   }
 }  // namespace
 
-TEST(FileMappingWsNetwork, LoopbackHelloListRead) {
+TEST(FileMappingWsNetwork, RpcNotFoundDoesNotCloseSessionBeforeUpload) {
   temp_ws_smoke_t temp;
 
   file_mapping::mapping_t mapping;
   mapping.id = "host-test";
   mapping.name = "Host Test";
   mapping.local_root = temp.root;
+  mapping.mode = file_mapping::access_mode_e::readwrite;
   mapping.clients = { "client-uuid" };
 
   file_mapping::operations::execution_context_t operations_context;
@@ -187,9 +188,22 @@ TEST(FileMappingWsNetwork, LoopbackHelloListRead) {
         return testing::AssertionFailure() << "unexpected list reply: " << list.dump();
       }
 
-      ws.write(asio::buffer(R"({"type":"read","id":2,"mapping":"host-test","path":"hello.txt","offset":6,"length":5})"));
+      ws.write(asio::buffer(R"({"type":"stat","id":2,"mapping":"host-test","path":"uploaded.txt"})"));
+      auto missing = read_json(ws);
+      if (missing["type"].get<std::string>() != "error" || missing["code"].get<std::string>() != "not_found") {
+        return testing::AssertionFailure() << "unexpected stat reply: " << missing.dump();
+      }
+
+      ws.write(asio::buffer(
+        R"({"type":"write","id":3,"mapping":"host-test","path":"uploaded.txt","upload_id":"network-test","offset":0,"total_size":5,"begin":true,"complete":true,"data":"cHJvYmU="})"));
+      auto write = read_json(ws);
+      if (write["type"].get<std::string>() != "result" || !write["completed"].get<bool>()) {
+        return testing::AssertionFailure() << "unexpected write reply: " << write.dump();
+      }
+
+      ws.write(asio::buffer(R"({"type":"read","id":4,"mapping":"host-test","path":"uploaded.txt","offset":0,"length":5})"));
       auto read = read_json(ws);
-      if (read["type"].get<std::string>() != "result" || read["data"].get<std::string>() != "d29ybGQ=") {
+      if (read["type"].get<std::string>() != "result" || read["data"].get<std::string>() != "cHJvYmU=") {
         return testing::AssertionFailure() << "unexpected read reply: " << read.dump();
       }
 

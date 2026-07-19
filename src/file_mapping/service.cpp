@@ -36,6 +36,13 @@ namespace file_mapping {
 
     auto operations_context = file_mapping::operations::execution_context_t {};
     operations_context.mapping_provider = []() {
+      auto roots = file_mapping::enumerate_host_roots();
+      if (!roots.empty()) {
+        return roots;
+      }
+
+      // Keep the configured mappings as a compatibility fallback for unusual
+      // environments where no filesystem root can be enumerated.
       return file_mapping_store::global().snapshot();
     };
 

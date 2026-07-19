@@ -453,7 +453,8 @@ namespace system_tray {
   };
 
   auto tray_visit_project_sunshine_cb = [](struct tray_menu *item) {
-    platf::open_url_in_browser("https://github.com/AlkaidLab/foundation-sunshine");
+    // Fork-specific support and releases live in the BuffPlum repository.
+    platf::open_url_in_browser("https://github.com/BuffPlum/foundation-sunshine");
   };
 
   auto tray_visit_project_moonlight_cb = [](struct tray_menu *item) {
