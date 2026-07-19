@@ -169,7 +169,12 @@ namespace file_mapping_ws {
       queue_reply(std::move(*result.reply));
     }
 
-    if (!result.ok || result.close) {
+    // RPC-level errors such as not_found are valid replies and must not tear
+    // down the transport. The client can legitimately recover from them (for
+    // example, an upload checks that the destination is absent with stat
+    // before sending the first write chunk). Only protocol/session failures
+    // explicitly marked for closure should terminate the WebSocket.
+    if (result.close) {
       close_requested_ = true;
       pending_close_reason_ = result.error.empty() ? "WebSocket session closed after protocol error" : result.error;
       if (!write_active_) {

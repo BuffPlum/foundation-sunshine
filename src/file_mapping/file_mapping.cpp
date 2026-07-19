@@ -228,6 +228,68 @@ namespace file_mapping {
     return true;
   }
 
+  std::vector<mapping_t>
+  enumerate_host_roots() {
+    std::vector<mapping_t> mappings;
+
+#ifdef _WIN32
+    const DWORD drive_mask = GetLogicalDrives();
+    if (drive_mask == 0) {
+      return mappings;
+    }
+
+    for (unsigned int index = 0; index < 26; ++index) {
+      if ((drive_mask & (1UL << index)) == 0) {
+        continue;
+      }
+
+      const wchar_t letter = static_cast<wchar_t>(L'A' + index);
+      const std::wstring root_text { letter, L':', L'\\' };
+      const UINT drive_type = GetDriveTypeW(root_text.c_str());
+      if (drive_type == DRIVE_UNKNOWN || drive_type == DRIVE_NO_ROOT_DIR) {
+        continue;
+      }
+
+      std::error_code ec;
+      const fs::path root { root_text };
+      if (!fs::exists(root, ec) || ec) {
+        // Empty optical drives and disconnected network mappings are omitted
+        // until they become accessible.
+        continue;
+      }
+
+      mapping_t mapping;
+      mapping.id = "drive-";
+      mapping.id.push_back(static_cast<char>('a' + index));
+      mapping.name = std::string { static_cast<char>('A' + index), ':' };
+      mapping.local_root = root;
+      mapping.mode = drive_type == DRIVE_CDROM ? access_mode_e::read : access_mode_e::readwrite;
+      mapping.allow_delete = false;
+      mapping.allow_execute = false;
+      mapping.follow_reparse_points = false;
+      mapping.max_file_size = 0;
+      mappings.push_back(std::move(mapping));
+    }
+#else
+    std::error_code ec;
+    const fs::path root { "/" };
+    if (fs::exists(root, ec) && !ec) {
+      mapping_t mapping;
+      mapping.id = "filesystem-root";
+      mapping.name = "/";
+      mapping.local_root = root;
+      mapping.mode = access_mode_e::readwrite;
+      mapping.allow_delete = false;
+      mapping.allow_execute = false;
+      mapping.follow_reparse_points = false;
+      mapping.max_file_size = 0;
+      mappings.push_back(std::move(mapping));
+    }
+#endif
+
+    return mappings;
+  }
+
   resolve_result_t
   resolve_path(const mapping_t &mapping, std::string_view remote_path, bool must_exist) {
     if (!is_valid_mapping_id(mapping.id)) {
@@ -237,9 +299,9 @@ namespace file_mapping {
     std::string safety_message;
     if (!is_safe_relative_path(remote_path, &safety_message)) {
       const auto error =
-        safety_message == "remote path must be relative" ? resolve_error_e::absolute_path :
+        safety_message == "remote path must be relative"                        ? resolve_error_e::absolute_path :
         safety_message == "remote path contains a reserved Windows device name" ? resolve_error_e::reserved_name :
-                                                                                resolve_error_e::invalid_relative_path;
+                                                                                  resolve_error_e::invalid_relative_path;
       return fail(error, std::move(safety_message));
     }
 

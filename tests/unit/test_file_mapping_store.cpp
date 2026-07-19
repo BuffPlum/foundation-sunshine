@@ -79,7 +79,7 @@ TEST(FileMappingStore, QuickShareAcceptsWindowsVerbatimPath) {
 }
 #endif
 
-TEST(FileMappingStore, ReplaceNormalizesReadOnlyBoundary) {
+TEST(FileMappingStore, ReplacePreservesReadWriteButNormalizesDangerousPermissions) {
   temp_store_tree_t tree;
   file_mapping_store::store_t store;
   file_mapping::mapping_t mapping;
@@ -95,7 +95,7 @@ TEST(FileMappingStore, ReplaceNormalizesReadOnlyBoundary) {
 
   auto snapshot = store.snapshot();
   ASSERT_EQ(snapshot.size(), 1);
-  EXPECT_EQ(snapshot.front().mode, file_mapping::access_mode_e::read);
+  EXPECT_EQ(snapshot.front().mode, file_mapping::access_mode_e::readwrite);
   EXPECT_FALSE(snapshot.front().allow_delete);
   EXPECT_FALSE(snapshot.front().allow_execute);
   EXPECT_FALSE(snapshot.front().follow_reparse_points);
@@ -108,10 +108,10 @@ TEST(FileMappingStore, UpdateChangesUserFacingSettings) {
   ASSERT_TRUE(created.ok) << created.error;
 
   auto updated = store.update(created.mapping.id, {
-                                                 { "name", "Shared Downloads" },
-                                                 { "max_file_size", 42 },
-                                                 { "clients", { "client-a", "client-b" } },
-                                               });
+                                                    { "name", "Shared Downloads" },
+                                                    { "max_file_size", 42 },
+                                                    { "clients", { "client-a", "client-b" } },
+                                                  });
 
   ASSERT_TRUE(updated.ok) << updated.error;
   EXPECT_EQ(updated.mapping.name, "Shared Downloads");
@@ -129,8 +129,8 @@ TEST(FileMappingStore, AcceptsSignedJsonIntegerMaxFileSize) {
   ASSERT_TRUE(created.ok) << created.error;
 
   auto updated = store.update(created.mapping.id, {
-                                                 { "max_file_size", static_cast<std::int64_t>(42) },
-                                               });
+                                                    { "max_file_size", static_cast<std::int64_t>(42) },
+                                                  });
 
   ASSERT_TRUE(updated.ok) << updated.error;
   EXPECT_EQ(updated.mapping.max_file_size, 42);
@@ -143,27 +143,26 @@ TEST(FileMappingStore, RejectsUnsupportedDeletePermission) {
   ASSERT_TRUE(created.ok) << created.error;
 
   auto rejected = store.update(created.mapping.id, {
-                                                    { "allow_delete", true },
-                                                  });
+                                                     { "allow_delete", true },
+                                                   });
 
   EXPECT_FALSE(rejected.ok);
-  EXPECT_EQ(rejected.error, "allow_delete is not supported in the read-only phase");
+  EXPECT_EQ(rejected.error, "allow_delete is not supported; uploads never overwrite or delete remote files");
   EXPECT_FALSE(store.snapshot().front().allow_delete);
 }
 
-TEST(FileMappingStore, RejectsReadWriteModeInReadOnlyPhase) {
+TEST(FileMappingStore, EnablesReadWriteModeForUploads) {
   temp_store_tree_t tree;
   file_mapping_store::store_t store;
   auto created = store.add_quick_share(tree.root / "Downloads");
   ASSERT_TRUE(created.ok) << created.error;
 
-  auto rejected = store.update(created.mapping.id, {
+  auto updated = store.update(created.mapping.id, {
                                                     { "mode", "readwrite" },
                                                   });
 
-  EXPECT_FALSE(rejected.ok);
-  EXPECT_EQ(rejected.error, "readwrite mode is not supported in the read-only phase");
-  EXPECT_EQ(store.snapshot().front().mode, file_mapping::access_mode_e::read);
+  ASSERT_TRUE(updated.ok) << updated.error;
+  EXPECT_EQ(store.snapshot().front().mode, file_mapping::access_mode_e::readwrite);
 }
 
 TEST(FileMappingStore, RejectsUnsupportedDangerousPermissions) {
@@ -173,14 +172,14 @@ TEST(FileMappingStore, RejectsUnsupportedDangerousPermissions) {
   ASSERT_TRUE(created.ok) << created.error;
 
   auto execute = store.update(created.mapping.id, {
-                                                  { "allow_execute", true },
-                                                });
+                                                    { "allow_execute", true },
+                                                  });
   EXPECT_FALSE(execute.ok);
   EXPECT_EQ(execute.error, "allow_execute is not supported");
 
   auto reparse = store.update(created.mapping.id, {
-                                                  { "follow_reparse_points", true },
-                                                });
+                                                    { "follow_reparse_points", true },
+                                                  });
   EXPECT_FALSE(reparse.ok);
   EXPECT_EQ(reparse.error, "follow_reparse_points is not supported");
 }

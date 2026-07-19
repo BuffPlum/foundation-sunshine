@@ -101,6 +101,8 @@ namespace file_mapping::rpc {
         return "open";
       case message_type_e::read:
         return "read";
+      case message_type_e::write:
+        return "write";
       case message_type_e::close:
         return "close";
       case message_type_e::mkdir:
@@ -181,6 +183,7 @@ namespace file_mapping::rpc {
     if (value == "stat") return message_type_e::stat;
     if (value == "open") return message_type_e::open;
     if (value == "read" || value == "read_chunk") return message_type_e::read;
+    if (value == "write" || value == "write_chunk") return message_type_e::write;
     if (value == "close") return message_type_e::close;
     if (value == "mkdir") return message_type_e::mkdir;
     if (value == "rename") return message_type_e::rename;
@@ -225,13 +228,11 @@ namespace file_mapping::rpc {
     out["mappings"] = nlohmann::json::array();
 
     for (const auto &mapping : mappings) {
-      out["mappings"].push_back({
-        { "id", mapping.id },
+      out["mappings"].push_back({ { "id", mapping.id },
         { "name", mapping.name },
         { "side", mapping.side },
         { "mode", mapping.mode },
-        { "capabilities", mapping.capabilities }
-      });
+        { "capabilities", mapping.capabilities } });
     }
     return out;
   }
@@ -251,16 +252,12 @@ namespace file_mapping::rpc {
     return {
       { "job_id", job.job_id },
       { "operation", to_string(job.operation) },
-      { "source", {
-          { "side", job.source.side },
-          { "mapping", job.source.mapping },
-          { "path", job.source.path }
-        } },
-      { "destination", {
-          { "side", job.destination.side },
-          { "mapping", job.destination.mapping },
-          { "path", job.destination.path }
-        } },
+      { "source", { { "side", job.source.side },
+                    { "mapping", job.source.mapping },
+                    { "path", job.source.path } } },
+      { "destination", { { "side", job.destination.side },
+                         { "mapping", job.destination.mapping },
+                         { "path", job.destination.path } } },
       { "total_bytes", job.total_bytes },
       { "transferred_bytes", job.transferred_bytes },
       { "state", to_string(job.state) },
@@ -312,7 +309,8 @@ namespace file_mapping::rpc {
     parse_result_t result;
     try {
       result.body = nlohmann::json::parse(text);
-    } catch (const nlohmann::json::exception &e) {
+    }
+    catch (const nlohmann::json::exception &e) {
       result.error = e.what();
       return result;
     }

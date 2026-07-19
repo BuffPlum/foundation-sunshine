@@ -159,7 +159,8 @@ namespace file_mapping_config {
     nlohmann::json root;
     try {
       root = nlohmann::json::parse(*decoded_text);
-    } catch (const nlohmann::json::exception &e) {
+    }
+    catch (const nlohmann::json::exception &e) {
       result.warnings.push_back(std::string { "file_mappings: invalid JSON: " } + e.what());
       return result;
     }
@@ -210,12 +211,8 @@ namespace file_mapping_config {
         continue;
       }
       mapping.clients = parse_clients(item);
-      if (mapping.mode == file_mapping::access_mode_e::readwrite) {
-        result.warnings.push_back(prefix + "readwrite mode ignored in read-only phase");
-        mapping.mode = file_mapping::access_mode_e::read;
-      }
       if (mapping.allow_delete) {
-        result.warnings.push_back(prefix + "allow_delete ignored in read-only phase");
+        result.warnings.push_back(prefix + "allow_delete ignored; uploads never overwrite or delete remote files");
         mapping.allow_delete = false;
       }
       if (mapping.allow_execute) {

@@ -112,7 +112,10 @@ namespace file_mapping_http {
     body["version"] = file_mapping::rpc::kProtocolVersion;
     body["transport"] = "wss";
     body["control"] = "json";
-    body["data"] = "binary";
+    // Control and payloads are JSON frames. File bytes are carried as base64
+    // inside write requests so the client does not have to implement a
+    // second binary WebSocket framing protocol.
+    body["data"] = "json-base64";
     body["session_endpoint"] = state.session_endpoint.empty() ? "/api/v1/file-mapping/session" : state.session_endpoint;
     body["session_url"] = make_request_session_url(state);
     body["session_token"] = state.session_token;
@@ -127,14 +130,14 @@ namespace file_mapping_http {
     for (const auto &[key, value] : state.diagnostics) {
       body["diagnostics"][key] = value;
     }
-    body["features"] = nlohmann::json::array({
-      "mappings",
+    body["features"] = nlohmann::json::array({ "mappings",
       "transfer_jobs",
+      "write_chunks",
       "explicit_authorization",
-      "cancel_job"
-    });
+      "cancel_job" });
     body["limits"] = {
       { "binary_header_size", file_mapping::rpc::kBinaryHeaderSize },
+      { "max_write_chunk_bytes", 512 * 1024 },
       { "max_protocol_version", file_mapping::rpc::kProtocolVersion }
     };
 

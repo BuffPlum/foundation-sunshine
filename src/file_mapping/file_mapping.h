@@ -57,6 +57,16 @@ namespace file_mapping {
   bool
   is_safe_relative_path(std::string_view remote_path, std::string *message = nullptr);
 
+  /**
+   * Enumerate filesystem roots that are directly accessible to the Sunshine
+   * process. On Windows, each currently mounted drive is exposed as an
+   * independent mapping (drive-c, drive-d, ...). This is intentionally
+   * evaluated at connection/operation time so removable drives can appear or
+   * disappear without editing Sunshine's configuration.
+   */
+  std::vector<mapping_t>
+  enumerate_host_roots();
+
   resolve_result_t
   resolve_path(const mapping_t &mapping, std::string_view remote_path, bool must_exist = false);
 }  // namespace file_mapping
