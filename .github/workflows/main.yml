@@ -1,9 +1,11 @@
 name: Build and Release
 
-# Published releases are owned by sign-and-repackage.yml. Keeping that event
-# out of this workflow prevents a release created below from starting another
-# build-and-release cycle.
+# BuffPlum releases are created as prereleases first. This workflow rebuilds
+# the published tag and attaches unsigned Windows packages plus checksums.
 on:
+  release:
+    types:
+      - published
   pull_request:
     branches:
       - master
@@ -15,6 +17,9 @@ on:
     branches:
       - master
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: '${{ github.workflow }}-${{ github.ref }}'
@@ -31,12 +36,12 @@ jobs:
   setup_release:
     name: Setup Release
     outputs:
-      publish_release: ${{ steps.setup_release_auto.outputs.publish_release || steps.setup_release_manual.outputs.publish_release }}
-      release_body: ${{ steps.setup_release_auto.outputs.release_body || steps.setup_release_manual.outputs.release_body }}
-      release_commit: ${{ steps.setup_release_auto.outputs.release_commit || steps.setup_release_manual.outputs.release_commit }}
-      release_generate_release_notes: ${{ steps.setup_release_auto.outputs.release_generate_release_notes || steps.setup_release_manual.outputs.release_generate_release_notes }}
-      release_tag: ${{ steps.setup_release_auto.outputs.release_tag || steps.setup_release_manual.outputs.release_tag }}
-      release_version: ${{ steps.setup_release_auto.outputs.release_version || steps.setup_release_manual.outputs.release_version }}
+      publish_release: ${{ steps.setup_release_published.outputs.publish_release || steps.setup_release_ci.outputs.publish_release || steps.setup_release_manual.outputs.publish_release }}
+      release_body: ${{ steps.setup_release_published.outputs.release_body || steps.setup_release_ci.outputs.release_body || steps.setup_release_manual.outputs.release_body }}
+      release_commit: ${{ steps.setup_release_published.outputs.release_commit || steps.setup_release_ci.outputs.release_commit || steps.setup_release_manual.outputs.release_commit }}
+      release_generate_release_notes: ${{ steps.setup_release_published.outputs.release_generate_release_notes || steps.setup_release_ci.outputs.release_generate_release_notes || steps.setup_release_manual.outputs.release_generate_release_notes }}
+      release_tag: ${{ steps.setup_release_published.outputs.release_tag || steps.setup_release_ci.outputs.release_tag || steps.setup_release_manual.outputs.release_tag }}
+      release_version: ${{ steps.setup_release_published.outputs.release_version || steps.setup_release_ci.outputs.release_version || steps.setup_release_manual.outputs.release_version }}
     permissions:
       contents: write  # read does not work to check squash and merge details
     runs-on: ubuntu-latest
@@ -44,12 +49,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Release (Auto)
-        id: setup_release_auto
-        if: github.event_name != 'workflow_dispatch'
-        uses: LizardByte/setup-release-action@v2025.426.225
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup Published BuffPlum Release
+        id: setup_release_published
+        if: github.event_name == 'release'
+        run: |
+          # Rebuild the exact published tag and attach packages to that release.
+          echo "publish_release=true" >> $GITHUB_OUTPUT
+          echo "release_body=BuffPlum release ${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          echo "release_commit=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "release_generate_release_notes=false" >> $GITHUB_OUTPUT
+          echo "release_tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          echo "release_version=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+
+      - name: Setup Continuous Integration Build
+        id: setup_release_ci
+        if: github.event_name != 'workflow_dispatch' && github.event_name != 'release'
+        run: |
+          # Default-branch pushes produce downloadable Actions artifacts but no release.
+          echo "publish_release=false" >> $GITHUB_OUTPUT
+          echo "release_body=CI build ${{ github.run_number }}" >> $GITHUB_OUTPUT
+          echo "release_commit=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "release_generate_release_notes=false" >> $GITHUB_OUTPUT
+          echo "release_tag=ci-${{ github.run_number }}" >> $GITHUB_OUTPUT
+          echo "release_version=ci-${{ github.run_number }}" >> $GITHUB_OUTPUT
 
       - name: Setup Release (Manual)
         id: setup_release_manual
@@ -155,14 +177,12 @@ jobs:
         shell: msys2 {0}
         env:
           BRANCH: ${{ github.head_ref || github.ref_name }}
-          BUILD_VERSION: ${{ needs.setup_release.outputs.release_tag }}.杂鱼
+          BUILD_VERSION: ${{ needs.setup_release.outputs.release_tag }}
           COMMIT: ${{ needs.setup_release.outputs.release_commit }}
-          GITHUB_TOKEN: ${{ secrets.DRIVER_DOWNLOAD_TOKEN }}
-          # Fork PRs cannot access org-scoped secrets, so private-repo driver
-          # downloads (vmouse) may fail. Downgrade missing drivers from
-          # FATAL_ERROR to WARNING so the build/configure still succeeds; the
-          # affected drivers are simply excluded from the installer.
-          DRIVER_DEPS_REQUIRED: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) && 'OFF' || 'ON' }}
+          GITHUB_TOKEN: ${{ github.token }}
+          # The independent fork has no access to upstream private driver
+          # repositories. Missing optional drivers must not block a release.
+          DRIVER_DEPS_REQUIRED: 'OFF'
         run: |
           mkdir -p build
           cmake \
@@ -175,8 +195,8 @@ jobs:
             -DSUNSHINE_ASSETS_DIR=assets \
             -DDRIVER_DEPS_REQUIRED=${DRIVER_DEPS_REQUIRED} \
             -DSUNSHINE_PUBLISHER_NAME='${{ github.repository_owner }}' \
-            -DSUNSHINE_PUBLISHER_WEBSITE='https://github.com/AlkaidLab/foundation-sunshine' \
-            -DSUNSHINE_PUBLISHER_ISSUE_URL='https://github.com/AlkaidLab/foundation-sunshine/issues'
+            -DSUNSHINE_PUBLISHER_WEBSITE='${{ github.server_url }}/${{ github.repository }}' \
+            -DSUNSHINE_PUBLISHER_ISSUE_URL='${{ github.server_url }}/${{ github.repository }}/issues'
           ninja -C build
 
       - name: Run native tests
@@ -251,7 +271,8 @@ jobs:
           TAG="${{ needs.setup_release.outputs.release_tag }}"
           NEWTAG="$TAG"
 
-          if [[ "$TAG" =~ ^v([0-9]{4})\.([0-9]+) ]]; then
+          # Preserve the full independent version, including -buffplum.N.
+          if [[ "$TAG" != *-buffplum.* && "$TAG" =~ ^v([0-9]{4})\.([0-9]+) ]]; then
             YEAR="${BASH_REMATCH[1]}"
             DATE_PART="${BASH_REMATCH[2]}"
             DATE_PADDED=$(printf "%04d" "$DATE_PART")
@@ -273,14 +294,14 @@ jobs:
             artifacts/checksums.json
           if-no-files-found: error
 
-      - name: Create/Update GitHub Release
-        if: needs.setup_release.outputs.publish_release == 'true'
-        uses: LizardByte/create-release-action@v2025.426.1549
+      - name: Attach packages to the published GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
         with:
-          allowUpdates: true
-          body: ${{ needs.setup_release.outputs.release_body }}
-          generateReleaseNotes: ${{ needs.setup_release.outputs.release_generate_release_notes }}
-          name: ${{ needs.setup_release.outputs.release_tag }}.杂鱼
-          prerelease: true
-          tag: ${{ needs.setup_release.outputs.release_tag }}.杂鱼
-          token: ${{ secrets.GH_BOT_TOKEN }}
+          tag_name: ${{ needs.setup_release.outputs.release_tag }}
+          files: |
+            artifacts/Sunshine.*.WindowsInstaller.exe
+            artifacts/Sunshine.*.WindowsPortable.zip
+            artifacts/SHA256SUMS.txt
+            artifacts/checksums.json
+          fail_on_unmatched_files: true

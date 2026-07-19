@@ -1,14 +1,14 @@
 ## What's Changed
 
 ### ✨ New Features
-* **feat:** 功能描述 by [@用户名](https://github.com/用户名) in [#PR号](https://github.com/qiin2333/Sunshine-Foundation/pull/PR号)
+* **feat:** 功能描述 by [@用户名](https://github.com/用户名) in [#PR号](https://github.com/BuffPlum/foundation-sunshine/pull/PR号)
 
 ### 🔧 Improvements & Refactors
-* **refactor:** 改进描述 by [@用户名](https://github.com/用户名) in [#PR号](https://github.com/qiin2333/Sunshine-Foundation/pull/PR号)
-* **chore:** 任务描述 by [@用户名](https://github.com/用户名) in [#PR号](https://github.com/qiin2333/Sunshine-Foundation/pull/PR号)
+* **refactor:** 改进描述 by [@用户名](https://github.com/用户名) in [#PR号](https://github.com/BuffPlum/foundation-sunshine/pull/PR号)
+* **chore:** 任务描述 by [@用户名](https://github.com/用户名) in [#PR号](https://github.com/BuffPlum/foundation-sunshine/pull/PR号)
 
 ### 🐛 Bug Fixes
-* **fix:** 修复描述 by [@用户名](https://github.com/用户名) in [#PR号](https://github.com/qiin2333/Sunshine-Foundation/pull/PR号)
+* **fix:** 修复描述 by [@用户名](https://github.com/用户名) in [#PR号](https://github.com/BuffPlum/foundation-sunshine/pull/PR号)
 
 ---
 
@@ -18,11 +18,11 @@
 ---
 
 ## 🎉 New Contributors
-* [@用户名](https://github.com/用户名) made their first contribution in [#PR号](https://github.com/qiin2333/Sunshine-Foundation/pull/PR号)
+* [@用户名](https://github.com/用户名) made their first contribution in [#PR号](https://github.com/BuffPlum/foundation-sunshine/pull/PR号)
 
 ---
 
-**Full Changelog**: https://github.com/qiin2333/Sunshine-Foundation/compare/PREVIOUS_TAG...CURRENT_TAG
+**Full Changelog**: https://github.com/BuffPlum/foundation-sunshine/compare/PREVIOUS_TAG...CURRENT_TAG
 
 ---
 

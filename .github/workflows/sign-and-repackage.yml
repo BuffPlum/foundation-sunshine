@@ -1,4 +1,4 @@
-# 签名并重新打包工作流（仅用于正式发布版本）
+# 签名并重新打包工作流（仅供配置了 SignPath 凭据时手动使用）
 # 流程：
 # 1. 编译当前分支的代码（只编译一次）
 # 2. 生成未签名的 ZIP 和 Inno Setup staging 目录
@@ -11,8 +11,6 @@
 name: Sign and Repackage (Release Only)
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       ref:
@@ -33,8 +31,6 @@ jobs:
   sign-and-repackage:
     name: Sign Files and Repackage
     runs-on: windows-latest
-    # 只在正式发布时运行（不是预发布）
-    if: ${{ (github.event_name == 'release' && !github.event.release.prerelease) || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - name: Checkout
@@ -156,7 +152,7 @@ jobs:
         shell: msys2 {0}
         env:
           BRANCH: master
-          BUILD_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release-tag }}.杂鱼
+          BUILD_VERSION: ${{ github.event.inputs.release-tag }}
           COMMIT: ${{ github.sha }}
         run: |
           # add Rust to PATH for Tauri GUI build
@@ -172,8 +168,8 @@ jobs:
             -DBUILD_DOCS=OFF \
             -DSUNSHINE_ASSETS_DIR=assets \
             -DSUNSHINE_PUBLISHER_NAME='${{ github.repository_owner }}' \
-            -DSUNSHINE_PUBLISHER_WEBSITE='https://github.com/qiin2333/Sunshine-Foundation' \
-            -DSUNSHINE_PUBLISHER_ISSUE_URL='https://github.com/qiin2333/Sunshine-Foundation/issues'
+            -DSUNSHINE_PUBLISHER_WEBSITE='${{ github.server_url }}/${{ github.repository }}' \
+            -DSUNSHINE_PUBLISHER_ISSUE_URL='${{ github.server_url }}/${{ github.repository }}/issues'
           ninja -C build
           ninja -C build sunshine-control-panel
 
@@ -379,7 +375,7 @@ jobs:
 
       # 发布到 GitHub Release
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release-tag }}
           name: ${{ github.event_name == 'release' && github.event.release.name || github.event.inputs.release-tag }} (Signed)
@@ -388,6 +384,5 @@ jobs:
             final-signed/*.exe
           draft: true
           prerelease: true
-          allowUpdates: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

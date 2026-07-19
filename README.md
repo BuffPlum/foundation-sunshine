@@ -10,13 +10,20 @@
 [![Deutsch](https://img.shields.io/badge/Deutsch-yellow?style=flat-square)](README.de.md)
 [![日本語](https://img.shields.io/badge/日本語-purple?style=flat-square)](README.ja.md)
 
-基于 [LizardByte/Sunshine](https://github.com/LizardByte/Sunshine) 的增强分支，专注于 Windows 游戏串流体验
+基于 [AlkaidLab/foundation-sunshine](https://github.com/AlkaidLab/foundation-sunshine) 独立维护的 BuffPlum 增强分支，专注于 Windows 游戏串流体验
 
-[使用文档](https://docs.qq.com/aio/DSGdQc3htbFJjSFdO?p=YTpMj5JNNdB5hEKJhhqlSB) · [LizardByte 文档](https://docs.lizardbyte.dev/projects/sunshine/latest/) · [QQ 交流群](https://qm.qq.com/cgi-bin/qm/qr?k=5qnkzSaLIrIaU4FvumftZH_6Hg7fUuLD&jump_from=webapi)
+[BuffPlum Releases](https://github.com/BuffPlum/foundation-sunshine/releases) · [配套 Moonlight](https://github.com/BuffPlum/moonlight-qt) · [使用文档](https://docs.qq.com/aio/DSGdQc3htbFJjSFdO?p=YTpMj5JNNdB5hEKJhhqlSB) · [LizardByte 文档](https://docs.lizardbyte.dev/projects/sunshine/latest/)
 
 </div>
 
 ---
+
+> [!WARNING]
+> **这是 BuffPlum 独立维护的非官方版本。** 它不由 AlkaidLab、LizardByte 或 Moonlight 上游提供支持。全盘文件传输会向已配对客户端公开 Sunshine 进程能够访问的全部磁盘，仅建议在可信局域网和个人设备间使用。安装前请阅读 [安全说明](SECURITY.md)。
+>
+> 上游当前因安全边界、测试和长期维护成本决定不合并或维护全盘文件传输。本 Fork 将独立维护该能力；Fork 专属问题请提交到 [BuffPlum/foundation-sunshine Issues](https://github.com/BuffPlum/foundation-sunshine/issues)，不要提交给上游。
+>
+> 独立版本号使用 `vYYYY.MDD-buffplum.N`，发布步骤见 [BuffPlum Release Process](.github/BUFFPLUM_RELEASES.md)。
 
 ### ░▒▓ 核心特性
 
@@ -120,7 +127,7 @@ HDR10 静态元数据（Mastering Display Info + Content Light Level）完整透
 
 搭配以下优化版 Moonlight 客户端可获得最佳体验（激活套装属性）
 
-- **PC** — [Moonlight-PC](https://github.com/qiin2333/moonlight-qt)（Windows · macOS · Linux）
+- **PC** — [BuffPlum Moonlight-PC](https://github.com/BuffPlum/moonlight-qt)（Windows 为主要支持平台）
 - **Android** — [威力加强版](https://github.com/qiin2333/moonlight-vplus) · [王冠版](https://github.com/WACrown/moonlight-android)
 - **iOS** — [VoidLink](https://github.com/The-Fried-Fish/VoidLink-previously-moonlight-zwm)
 - **鸿蒙** — [Moonlight V+](https://appgallery.huawei.com/app/detail?id=com.alkaidlab.sdream)
@@ -158,14 +165,14 @@ GPU 兼容性：[NVENC](https://developer.nvidia.com/video-encode-and-decode-gpu
 
 「 ░▒▓ 」
 
-<a href="https://github.com/qiin2333/foundation-sunshine/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=qiin2333/foundation-sunshine&max=100" />
+<a href="https://github.com/BuffPlum/foundation-sunshine/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=BuffPlum/foundation-sunshine&max=100" />
 </a>
 
 <br>
 
 [![加入QQ群](https://pub.idqqimg.com/wpa/images/group.png '加入QQ群')](https://qm.qq.com/cgi-bin/qm/qr?k=WC2PSZ3Q6Hk6j8U_DG9S7522GPtItk0m&jump_from=webapi&authKey=zVDLFrS83s/0Xg3hMbkMeAqI7xoHXaM3sxZIF/u9JW7qO/D8xd0npytVBC2lOS+z)
 
-[![Star History Chart](https://api.star-history.com/chart?repos=AlkaidLab/foundation-sunshine&type=date&legend=top-left&sealed_token=8GzivsLWTBiHWFj-MfIXqxD6tKYaPkTgNvC2q8IjHD2nbEypOWmB3bwOGTGtsCNg-ZKW0uy10gX845qiIMElcA4v_qbJh8OUYhiWtI0aSCvempCz97-OcUeWNrYRPz_rZ0hy7mb8Hfj8qnuVAOZ-p04lzSPXNOyVbm4U-acAHIqyQTdm8FXY-jrXzArQ)](https://www.star-history.com/?repos=AlkaidLab%2Ffoundation-sunshine&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=BuffPlum/foundation-sunshine&type=Date)](https://www.star-history.com/#BuffPlum/foundation-sunshine&Date)
 
 </div>
