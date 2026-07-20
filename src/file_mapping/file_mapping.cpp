@@ -17,6 +17,59 @@ namespace file_mapping {
   namespace {
     namespace fs = std::filesystem;
 
+#ifdef _WIN32
+    std::string
+    wide_to_utf8(std::wstring_view value) {
+      if (value.empty()) {
+        return {};
+      }
+      const int size = WideCharToMultiByte(
+        CP_UTF8,
+        WC_ERR_INVALID_CHARS,
+        value.data(),
+        static_cast<int>(value.size()),
+        nullptr,
+        0,
+        nullptr,
+        nullptr);
+      if (size <= 0) {
+        return {};
+      }
+      std::string output(static_cast<std::size_t>(size), '\0');
+      if (WideCharToMultiByte(
+            CP_UTF8,
+            WC_ERR_INVALID_CHARS,
+            value.data(),
+            static_cast<int>(value.size()),
+            output.data(),
+            size,
+            nullptr,
+            nullptr) != size) {
+        return {};
+      }
+      return output;
+    }
+
+    std::string
+    drive_volume_label(const std::wstring &root) {
+      std::array<wchar_t, MAX_PATH + 1> volume_name {};
+      if (!GetVolumeInformationW(
+            root.c_str(),
+            volume_name.data(),
+            static_cast<DWORD>(volume_name.size()),
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            0) ||
+          volume_name.front() == L'\0') {
+        return {};
+      }
+
+      return wide_to_utf8(volume_name.data());
+    }
+#endif
+
     std::string
     ascii_lower(std::string value) {
       std::transform(std::begin(value), std::end(value), std::begin(value), [](unsigned char ch) {
@@ -262,6 +315,7 @@ namespace file_mapping {
       mapping.id = "drive-";
       mapping.id.push_back(static_cast<char>('a' + index));
       mapping.name = std::string { static_cast<char>('A' + index), ':' };
+      mapping.volume_label = drive_volume_label(root_text);
       mapping.local_root = root;
       mapping.mode = drive_type == DRIVE_CDROM ? access_mode_e::read : access_mode_e::readwrite;
       // The BuffPlum full-disk variant intentionally exposes file-manager

@@ -938,6 +938,7 @@ namespace file_mapping::operations {
     return {
       { "id", mapping.id },
       { "name", mapping.name },
+      { "volume_label", mapping.volume_label },
       { "side", "host" },
       { "mode", mapping.mode == access_mode_e::read ? "read" : "readwrite" },
       { "capabilities", std::move(capabilities) }

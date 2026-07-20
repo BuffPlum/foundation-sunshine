@@ -230,6 +230,7 @@ namespace file_mapping::rpc {
     for (const auto &mapping : mappings) {
       out["mappings"].push_back({ { "id", mapping.id },
         { "name", mapping.name },
+        { "volume_label", mapping.volume_label },
         { "side", mapping.side },
         { "mode", mapping.mode },
         { "capabilities", mapping.capabilities } });

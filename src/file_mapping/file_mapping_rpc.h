@@ -63,6 +63,7 @@ namespace file_mapping::rpc {
   struct exposed_mapping_t {
     std::string id;
     std::string name;
+    std::string volume_label;
     std::string side;
     std::string mode;
     std::vector<std::string> capabilities;

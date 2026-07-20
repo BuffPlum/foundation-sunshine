@@ -32,6 +32,7 @@ namespace file_mapping {
   struct mapping_t {
     std::string id;
     std::string name;
+    std::string volume_label;
     std::filesystem::path local_root;
     access_mode_e mode = access_mode_e::read;
     bool allow_delete = false;
