@@ -1,4 +1,4 @@
-# Sunshine Foundation Edition
+# Foundation Sunshine Edition
 
 ## 🌐 Multi-language Support
 
@@ -197,5 +197,5 @@ This repository is the primary home of the BuffPlum edition. Fork-specific featu
 
 ---
 
-**Sunshine Foundation Edition - Making Game Streaming More Elegant**
+**Foundation Sunshine Edition - Making Game Streaming More Elegant**
 ```
