@@ -370,7 +370,7 @@ onMounted(async () => {
 
 .home-intro .page-title {
   margin-bottom: 0.18rem;
-  font-size: 1.55rem;
+  font-size: 1.9rem;
   line-height: 1.15;
   font-weight: 650;
   letter-spacing: -0.03em;
@@ -378,7 +378,6 @@ onMounted(async () => {
 
 .home-intro .page-subtitle {
   max-width: 48rem;
-  font-size: 0.86rem;
 }
 
 .home-status {
@@ -392,7 +391,7 @@ onMounted(async () => {
   background: color-mix(in srgb, var(--ui-surface) 88%, transparent);
   color: var(--ui-text-primary, #1e293b);
   backdrop-filter: blur(10px);
-  font-size: 0.76rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   font-family: inherit;
   text-align: left;
@@ -499,7 +498,7 @@ onMounted(async () => {
 .host-meta {
   margin: 0.22rem 0 0;
   color: var(--ui-text-secondary, #64748b);
-  font-size: 0.76rem;
+  font-size: var(--font-size-sm);
 }
 
 .host-metrics {
@@ -543,7 +542,7 @@ onMounted(async () => {
 
 .metric-label {
   color: var(--ui-text-secondary, #64748b);
-  font-size: 0.64rem;
+  font-size: var(--font-size-xs);
   line-height: 1.1;
 }
 
@@ -608,13 +607,13 @@ onMounted(async () => {
 }
 
 .quick-action-copy > span {
-  font-size: 0.76rem;
+  font-size: var(--font-size-sm);
   font-weight: 650;
 }
 
 .quick-action-copy > small {
   color: var(--ui-text-secondary, #64748b);
-  font-size: 0.62rem;
+  font-size: var(--font-size-xs);
 }
 
 .quick-action-arrow {
@@ -660,17 +659,8 @@ onMounted(async () => {
     padding: 1rem 1.25rem 0.9rem 1.35rem;
   }
 
-  .home-intro .page-title {
-    font-size: 1.85rem;
-  }
-
-  .home-intro .page-subtitle {
-    font-size: 0.95rem;
-  }
-
   .home-status {
     padding: 0.55rem 0.9rem;
-    font-size: 0.82rem;
   }
 
   .host-overview {
@@ -687,10 +677,6 @@ onMounted(async () => {
 
   .host-name {
     font-size: 1.7rem;
-  }
-
-  .host-meta {
-    font-size: 0.82rem;
   }
 
   .host-metrics,
@@ -715,10 +701,6 @@ onMounted(async () => {
     font-size: 1.2rem;
   }
 
-  .metric-label {
-    font-size: 0.7rem;
-  }
-
   .quick-action {
     grid-template-columns: 2.1rem minmax(0, 1fr) auto;
     column-gap: 0.58rem;
@@ -729,49 +711,6 @@ onMounted(async () => {
     width: 2.1rem;
     height: 2.1rem;
     font-size: 0.82rem;
-  }
-
-  .quick-action-copy > span {
-    font-size: 0.84rem;
-  }
-
-  .quick-action-copy > small {
-    font-size: 0.68rem;
-  }
-
-  .home-resources .resource-groups {
-    gap: 0.58rem;
-  }
-
-  .home-resources .resource-group {
-    padding: 0.5rem 0.55rem 0.55rem;
-  }
-
-  .home-resources .resource-items {
-    grid-auto-rows: 3.1rem;
-    gap: 0.55rem;
-  }
-
-  .home-resources .resource-group-title {
-    margin-bottom: 0.42rem;
-    font-size: 0.78rem;
-  }
-
-  .home-resources .resource-link--compact {
-    padding: 0.42rem 0.55rem;
-  }
-
-  .home-resources .resource-link--compact .resource-icon {
-    width: 30px;
-    height: 30px;
-  }
-
-  .home-resources .resource-link--compact .resource-title {
-    font-size: 0.8rem;
-  }
-
-  .home-resources .resource-link--compact .resource-desc {
-    font-size: 0.68rem;
   }
 
 }
@@ -825,7 +764,7 @@ onMounted(async () => {
   }
 
   .home-intro .page-title {
-    font-size: 1.55rem;
+    font-size: 1.7rem;
   }
 
   .home-status {
