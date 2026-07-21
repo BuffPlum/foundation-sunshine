@@ -1093,6 +1093,7 @@ namespace nvhttp {
     http_server.default_resource["GET"] = not_found<SimpleWeb::HTTP>;
     http_server.resource["^/serverinfo$"]["GET"] = serverinfo<SimpleWeb::HTTP>;
     http_server.resource["^/pair$"]["GET"] = pairing::pair_http;
+    http_server.resource["^/unpair$"]["GET"] = pairing::unpair_http;
 
     http_server.config.reuse_address = true;
     http_server.config.address = net::get_bind_address(address_family);
