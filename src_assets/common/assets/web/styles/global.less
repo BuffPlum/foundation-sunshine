@@ -1,8 +1,8 @@
 @import './var.css';
 
-// Cross-document navigation motion. The animation rules are shared by every
-// page, while init.js opts out only for the Tauri GUI iframe, which already
-// owns its loading transition.
+// Cross-document navigation motion. The browser opt-in lives in the shared
+// head template so it is available before navigation starts; the Tauri proxy
+// opts out because the GUI already owns its loading transition.
 
 ::view-transition-group(root) {
   animation-duration: 180ms;

@@ -1,5 +1,4 @@
 import i18n from './config/i18n.js'
-import { isTauriEnv } from './utils/helpers.js'
 import { markWebUiReady } from './utils/appReady.js'
 
 // must import even if not implicitly using here
@@ -13,18 +12,7 @@ if (typeof window !== 'undefined') {
   window.bootstrap = bootstrap
 }
 
-const enableStandaloneViewTransitions = () => {
-    const isEmbeddedGui = isTauriEnv() && window.parent !== window
-    if (isEmbeddedGui || document.querySelector('style[data-sunshine-view-transition]')) return
-
-    const style = document.createElement('style')
-    style.dataset.sunshineViewTransition = 'true'
-    style.textContent = '@view-transition { navigation: auto; }'
-    document.head.appendChild(style)
-}
-
 export async function initApp(app, config) {
-    enableStandaloneViewTransitions()
     const i18nInstance = await i18n()
 
     app.use(i18nInstance)
