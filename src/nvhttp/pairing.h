@@ -32,4 +32,7 @@ namespace nvhttp::pairing {
   void
   pair_http(resp_http_t response, req_http_t request);
 
+  void
+  unpair_http(resp_http_t response, req_http_t request);
+
 }  // namespace nvhttp::pairing

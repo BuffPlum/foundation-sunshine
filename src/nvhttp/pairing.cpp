@@ -492,6 +492,40 @@ namespace nvhttp {
       pair_impl<SimpleWeb::HTTP>(std::move(response), std::move(request));
     }
 
+    void
+    unpair_http(resp_http_t response, req_http_t request) {
+      log_request<SimpleWeb::HTTP>(request);
+
+      pt::ptree tree;
+      auto response_guard = util::fail_guard([&]() {
+        std::ostringstream data;
+        pt::write_xml(data, tree);
+        response->write(data.str());
+        response->close_connection_after_response = true;
+      });
+
+      auto args = request->parse_query_string();
+      auto unique_id_arg = args.find("uniqueid"s);
+      if (unique_id_arg == std::end(args) || unique_id_arg->second.empty()) {
+        tree.put("root.paired", 0);
+        tree.put("root.<xmlattr>.status_code", 400);
+        tree.put("root.<xmlattr>.status_message", "Missing uniqueid parameter");
+        return;
+      }
+
+      const std::string unique_id { unique_id_arg->second };
+      std::lock_guard<std::mutex> map_lock(map_id_sess_mutex);
+      auto session = map_id_sess.find(unique_id);
+      if (session != std::end(map_id_sess)) {
+        remove_session(session->second);
+      }
+
+      // Treat cleanup as idempotent. A repeated request should still succeed
+      // after the temporary pairing session has already been removed.
+      tree.put("root.paired", 0);
+      tree.put("root.<xmlattr>.status_code", 200);
+    }
+
   }  // namespace pairing
 
   void
