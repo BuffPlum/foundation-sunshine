@@ -39,7 +39,6 @@ param(
     [int]$BuildParallel = 4,
 
     [string]$QtBin = 'D:\dev\qt\6.11.1\msvc2022_64\bin',
-    [string]$NodeBin = 'D:\DevTools\Scoop\apps\nvm\current\nodejs\nodejs',
     [string]$MsysUcrtBin = 'D:\dev\msys64\ucrt64\bin',
 
     [switch]$SkipTests,
@@ -48,7 +47,6 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$PSNativeCommandUseErrorActionPreference = $false
 
 $SunshineRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $WorkspaceRoot = [IO.Path]::GetFullPath((Split-Path -Parent $SunshineRoot))
@@ -77,10 +75,7 @@ function Invoke-Native {
 
     try {
         Write-Host ('> {0} {1}' -f $FilePath, ($ArgumentList -join ' ')) -ForegroundColor DarkGray
-        # Merge native stderr into the log stream. Some tools (notably npm) emit
-        # non-fatal warnings on stderr, which PowerShell background jobs otherwise
-        # deserialize as ErrorRecord objects and can mistake for build failures.
-        & $FilePath @ArgumentList 2>&1 | ForEach-Object { Write-Host $_ }
+        & $FilePath @ArgumentList
         if ($LASTEXITCODE -ne 0) {
             throw "Command failed with exit code ${LASTEXITCODE}: $FilePath $($ArgumentList -join ' ')"
         }
@@ -383,15 +378,8 @@ function Build-SunshineRelease {
     if (-not (Test-Path -LiteralPath $innoCompiler)) {
         throw "Inno Setup compiler was not found: $innoCompiler"
     }
+    Require-Command npm.cmd
     Require-Command 7z.exe
-
-    $nodeExecutable = Join-Path $NodeBin 'node.exe'
-    $npmCommand = Join-Path $NodeBin 'npm.cmd'
-    foreach ($path in @($nodeExecutable, $npmCommand)) {
-        if (-not (Test-Path -LiteralPath $path)) {
-            throw "MSVC Node.js tool was not found: $path"
-        }
-    }
 
     Invoke-Native -FilePath git -ArgumentList @('-C', $SunshineRoot, 'submodule', 'update', '--init', '--recursive')
 
@@ -406,10 +394,7 @@ function Build-SunshineRelease {
     $oldAssets = $env:SUNSHINE_ASSETS_DIR
 
     try {
-        # Vite/Rolldown must run under the official MSVC Node.js build. The MSYS2
-        # UCRT Node build advertises a shared dll.a ABI and therefore requests a
-        # different native binding that npm does not install for normal Windows.
-        $env:PATH = "$NodeBin;$oldPath"
+        $env:PATH = "$MsysUcrtBin;D:\dev\msys64\usr\bin;$oldPath"
         $env:BRANCH = 'master'
         $env:BUILD_VERSION = $Version
         $env:COMMIT = (Get-NativeOutput -FilePath git -ArgumentList @('-C', $SunshineRoot, 'rev-parse', 'HEAD') | Select-Object -First 1).Trim()
@@ -417,13 +402,11 @@ function Build-SunshineRelease {
         $env:SUNSHINE_SOURCE_ASSETS_DIR = Join-Path $SunshineRoot 'src_assets'
         $env:SUNSHINE_ASSETS_DIR = $buildRoot
 
-        Invoke-Native -FilePath $npmCommand -ArgumentList @('ci', '--registry=https://registry.npmjs.org', '--no-audit', '--no-fund') -WorkingDirectory $SunshineRoot
+        Invoke-Native -FilePath npm.cmd -ArgumentList @('ci', '--registry=https://registry.npmjs.org', '--no-audit', '--no-fund') -WorkingDirectory $SunshineRoot
         if (-not $SkipTests) {
-            Invoke-Native -FilePath $npmCommand -ArgumentList @('run', 'test:webui') -WorkingDirectory $SunshineRoot
+            Invoke-Native -FilePath npm.cmd -ArgumentList @('run', 'test:webui') -WorkingDirectory $SunshineRoot
         }
-        Invoke-Native -FilePath $npmCommand -ArgumentList @('run', 'build') -WorkingDirectory $SunshineRoot
-
-        $env:PATH = "$MsysUcrtBin;D:\dev\msys64\usr\bin;$NodeBin;$oldPath"
+        Invoke-Native -FilePath npm.cmd -ArgumentList @('run', 'build') -WorkingDirectory $SunshineRoot
 
         $configureArgs = @(
             '-S', '.', '-B', 'build-ucrt64', '-G', 'Ninja',
@@ -751,7 +734,6 @@ if ($buildRequested -and $Target -eq 'All' -and -not $NoParallelBuilds) {
         SunshineNotesPath = $SunshineNotesPath
         BuildParallel = $childParallel
         QtBin = $QtBin
-        NodeBin = $NodeBin
         MsysUcrtBin = $MsysUcrtBin
         NoParallelBuilds = $true
     }
@@ -762,7 +744,6 @@ if ($buildRequested -and $Target -eq 'All' -and -not $NoParallelBuilds) {
         MoonlightNotesPath = $MoonlightNotesPath
         BuildParallel = $childParallel
         QtBin = $QtBin
-        NodeBin = $NodeBin
         MsysUcrtBin = $MsysUcrtBin
         NoParallelBuilds = $true
     }
@@ -777,7 +758,7 @@ if ($buildRequested -and $Target -eq 'All' -and -not $NoParallelBuilds) {
     )
     $jobs | Wait-Job | Out-Null
     foreach ($job in $jobs) {
-        Receive-Job -Job $job -ErrorAction Continue
+        Receive-Job -Job $job
         if ($job.State -ne 'Completed') {
             throw "Parallel build failed: $($job.Name) ($($job.State))"
         }
