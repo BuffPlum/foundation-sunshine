@@ -47,6 +47,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
 
 $SunshineRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $WorkspaceRoot = [IO.Path]::GetFullPath((Split-Path -Parent $SunshineRoot))
@@ -75,7 +76,10 @@ function Invoke-Native {
 
     try {
         Write-Host ('> {0} {1}' -f $FilePath, ($ArgumentList -join ' ')) -ForegroundColor DarkGray
-        & $FilePath @ArgumentList
+        # Merge native stderr into the log stream. Some tools (notably npm) emit
+        # non-fatal warnings on stderr, which PowerShell background jobs otherwise
+        # deserialize as ErrorRecord objects and can mistake for build failures.
+        & $FilePath @ArgumentList 2>&1 | ForEach-Object { Write-Host $_ }
         if ($LASTEXITCODE -ne 0) {
             throw "Command failed with exit code ${LASTEXITCODE}: $FilePath $($ArgumentList -join ' ')"
         }
@@ -758,7 +762,7 @@ if ($buildRequested -and $Target -eq 'All' -and -not $NoParallelBuilds) {
     )
     $jobs | Wait-Job | Out-Null
     foreach ($job in $jobs) {
-        Receive-Job -Job $job
+        Receive-Job -Job $job -ErrorAction Continue
         if ($job.State -ne 'Completed') {
             throw "Parallel build failed: $($job.Name) ($($job.State))"
         }
