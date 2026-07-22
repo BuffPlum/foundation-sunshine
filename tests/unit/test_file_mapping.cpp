@@ -48,6 +48,21 @@ TEST(FileMappingHelpers, MappingIdValidation) {
   EXPECT_FALSE(file_mapping::is_valid_mapping_id("bad/id"));
 }
 
+TEST(FileMappingHelpers, SharingModeDefaultsAndParsesExplicitFullDisk) {
+  file_mapping::set_sharing_mode(file_mapping::sharing_mode_e::read_only);
+  EXPECT_EQ(file_mapping::sharing_mode(), file_mapping::sharing_mode_e::read_only);
+  EXPECT_EQ(file_mapping::sharing_mode_name(file_mapping::sharing_mode()), "read_only");
+
+  const auto full_disk = file_mapping::parse_sharing_mode("full_disk");
+  ASSERT_TRUE(full_disk.has_value());
+  file_mapping::set_sharing_mode(*full_disk);
+  EXPECT_EQ(file_mapping::sharing_mode(), file_mapping::sharing_mode_e::full_disk);
+  EXPECT_EQ(file_mapping::sharing_mode_name(file_mapping::sharing_mode()), "full_disk");
+
+  EXPECT_FALSE(file_mapping::parse_sharing_mode("readwrite").has_value());
+  file_mapping::set_sharing_mode(file_mapping::sharing_mode_e::read_only);
+}
+
 TEST(FileMappingHelpers, ReservedWindowsNames) {
   EXPECT_TRUE(file_mapping::is_reserved_windows_name("CON"));
   EXPECT_TRUE(file_mapping::is_reserved_windows_name("con.txt"));

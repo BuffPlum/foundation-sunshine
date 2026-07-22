@@ -32,15 +32,32 @@ TEST(FileMappingHttp, CapabilityResponseAdvertisesProtocol) {
   EXPECT_EQ(body["transport"].get<std::string>(), "wss");
   EXPECT_EQ(body["control"].get<std::string>(), "json");
   EXPECT_EQ(body["data"].get<std::string>(), "json-base64");
+  EXPECT_EQ(body["access_mode"].get<std::string>(), "read_only");
   EXPECT_EQ(body["session_url"].get<std::string>(), state.session_url);
   EXPECT_EQ(body["session_token"].get<std::string>(), state.session_token);
   EXPECT_EQ(body["port"].get<int>(), state.port);
   EXPECT_EQ(body["diagnostics"]["token"].get<std::string>(), "issued");
   EXPECT_TRUE(std::find(body["features"].begin(), body["features"].end(), "cancel_job") != body["features"].end());
-  EXPECT_TRUE(std::find(body["features"].begin(), body["features"].end(), "write_chunks") != body["features"].end());
+  EXPECT_TRUE(std::find(body["features"].begin(), body["features"].end(), "write_chunks") == body["features"].end());
   EXPECT_TRUE(std::find(body["features"].begin(), body["features"].end(), "binary_frames") == body["features"].end());
-  EXPECT_EQ(body["limits"]["max_write_chunk_bytes"].get<std::size_t>(), 512 * 1024);
+  EXPECT_FALSE(body["limits"].contains("max_write_chunk_bytes"));
   EXPECT_EQ(body["limits"]["binary_header_size"].get<std::size_t>(), file_mapping::rpc::kBinaryHeaderSize);
+}
+
+TEST(FileMappingHttp, FullDiskCapabilityIsExplicit) {
+  file_mapping_http::capability_state_t state;
+  state.enabled = true;
+  state.listening = true;
+  state.full_disk_access = true;
+
+  auto response = file_mapping_http::make_capability_response(state);
+  auto body = nlohmann::json::parse(response.body);
+
+  EXPECT_EQ(body["access_mode"].get<std::string>(), "full_disk");
+  EXPECT_TRUE(std::find(body["features"].begin(), body["features"].end(), "buffplum_full_disk") != body["features"].end());
+  EXPECT_TRUE(std::find(body["features"].begin(), body["features"].end(), "write_chunks") != body["features"].end());
+  EXPECT_TRUE(std::find(body["features"].begin(), body["features"].end(), "conflict_policies") != body["features"].end());
+  EXPECT_EQ(body["limits"]["max_write_chunk_bytes"].get<std::size_t>(), 512 * 1024);
 }
 
 TEST(FileMappingHttp, CapabilityDoesNotBuildSessionUrlFromRequestHost) {

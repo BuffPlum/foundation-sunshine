@@ -15,13 +15,13 @@
 ---
 
 > [!WARNING]
-> **This is an unofficial version independently maintained by BuffPlum.** It is not supported by the AlkaidLab, LizardByte, or Moonlight upstream projects. Full-disk file transfer exposes every drive readable by the Sunshine process to an authenticated paired client. Use it only between personal devices on a trusted LAN and read the [security notice](SECURITY.md) before installing it.
+> **This is an unofficial version independently maintained by BuffPlum.** Its default file mode reuses the upstream authorized-mapping, token, WSS, path-validation, and transactional-config foundation and remains read-only. Only the explicitly enabled experimental BuffPlum full-disk mode exposes every drive readable by the Sunshine process and permits writes. Use that mode only between personal devices on a trusted LAN and read the [security notice](SECURITY.md) before installing it.
 >
-> Upstream currently does not merge or maintain the full-disk transfer feature because of its security boundary, testing burden, and long-term maintenance cost. Report fork-specific problems to [BuffPlum/foundation-sunshine Issues](https://github.com/BuffPlum/foundation-sunshine/issues), not upstream.
+> Upstream maintains the safe, general-purpose read-only File Mapping foundation, but not the full-disk read/write extension because of its security boundary, testing burden, and long-term maintenance cost. This fork independently maintains only that delta. Report fork-specific problems to [BuffPlum/foundation-sunshine Issues](https://github.com/BuffPlum/foundation-sunshine/issues), not upstream.
 >
 > Independent versions use `vYYYY.MDD-buffplum.N`. See the [BuffPlum release process](.github/BUFFPLUM_RELEASES.md).
 
-An independently maintained BuffPlum fork based on [AlkaidLab/foundation-sunshine](https://github.com/AlkaidLab/foundation-sunshine). Use it with [BuffPlum/moonlight-qt](https://github.com/BuffPlum/moonlight-qt), and download packages from [BuffPlum Releases](https://github.com/BuffPlum/foundation-sunshine/releases).
+An independently maintained BuffPlum fork based on [AlkaidLab/foundation-sunshine](https://github.com/AlkaidLab/foundation-sunshine), positioned as an experimental advanced full-disk file manager for trusted local networks. Use it with [BuffPlum/moonlight-qt](https://github.com/BuffPlum/moonlight-qt), and download packages from [BuffPlum Releases](https://github.com/BuffPlum/foundation-sunshine/releases).
 
 **Sunshine-Foundation** is a self-hosted game stream host for Moonlight. This forked version introduces significant improvements over the original Sunshine, focusing on enhancing the game streaming experience for various streaming terminal devices connected to a Windows host:
 
@@ -32,6 +32,7 @@ An independently maintained BuffPlum fork based on [AlkaidLab/foundation-sunshin
 - **Advanced Control Panel** - Intuitive web control interface with real-time monitoring and configuration management
 - **Low-Latency Transmission** - Optimized encoding processing leveraging the latest hardware capabilities
 - **Smart Pairing** - Intelligent management of pairing devices with corresponding profiles
+- **Experimental Advanced File Manager** - defaults to upstream-compatible read-only folder mappings; explicit full-disk mode adds bidirectional transfer, conflict handling, file operations, and stream-window drops
 
 ### 🎬 Full HDR Pipeline Architecture
 

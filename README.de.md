@@ -15,7 +15,7 @@
 ---
 
 > [!WARNING]
-> **Inoffizielle, unabhängig von BuffPlum gepflegte Version.** Die vollständige Dateiübertragung stellt einem gekoppelten Client alle Laufwerke bereit, auf die der Sunshine-Prozess zugreifen kann. Verwenden Sie diese Funktion nur zwischen persönlichen Geräten in einem vertrauenswürdigen LAN. Lesen Sie [SECURITY.md](SECURITY.md) und melden Sie Fork-spezifische Probleme unter [BuffPlum/foundation-sunshine](https://github.com/BuffPlum/foundation-sunshine/issues).
+> **Inoffizielle, unabhängig von BuffPlum gepflegte Version.** Der Standardmodus bleibt bei explizit freigegebenen, schreibgeschützten Ordnern. Nur der ausdrücklich aktivierte experimentelle BuffPlum-Vollfestplattenmodus stellt einem gekoppelten Client alle Laufwerke bereit, auf die der Sunshine-Prozess zugreifen kann. Verwenden Sie diesen Modus nur zwischen persönlichen Geräten in einem vertrauenswürdigen LAN. Lesen Sie [SECURITY.md](SECURITY.md) und melden Sie Fork-spezifische Probleme unter [BuffPlum/foundation-sunshine](https://github.com/BuffPlum/foundation-sunshine/issues).
 
 Ein Fork basierend auf LizardByte/Sunshine, bietet vollständige Dokumentationsunterstützung [Read the Docs](https://docs.qq.com/aio/DSGdQc3htbFJjSFdO?p=YTpMj5JNNdB5hEKJhhqlSB).
 

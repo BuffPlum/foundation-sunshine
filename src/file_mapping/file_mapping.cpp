@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <system_error>
 
@@ -16,6 +17,8 @@
 namespace file_mapping {
   namespace {
     namespace fs = std::filesystem;
+
+    std::atomic<sharing_mode_e> active_sharing_mode { sharing_mode_e::read_only };
 
 #ifdef _WIN32
     std::string
@@ -279,6 +282,32 @@ namespace file_mapping {
     }
 
     return true;
+  }
+
+  std::optional<sharing_mode_e>
+  parse_sharing_mode(std::string_view mode) {
+    if (mode == "read_only") {
+      return sharing_mode_e::read_only;
+    }
+    if (mode == "full_disk") {
+      return sharing_mode_e::full_disk;
+    }
+    return std::nullopt;
+  }
+
+  std::string_view
+  sharing_mode_name(sharing_mode_e mode) {
+    return mode == sharing_mode_e::full_disk ? "full_disk" : "read_only";
+  }
+
+  void
+  set_sharing_mode(sharing_mode_e mode) {
+    active_sharing_mode.store(mode, std::memory_order_release);
+  }
+
+  sharing_mode_e
+  sharing_mode() {
+    return active_sharing_mode.load(std::memory_order_acquire);
   }
 
   std::vector<mapping_t>

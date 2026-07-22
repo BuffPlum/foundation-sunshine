@@ -15,7 +15,7 @@
 ---
 
 > [!WARNING]
-> **Version non officielle maintenue indépendamment par BuffPlum.** Le transfert de fichiers sur tous les disques expose au client appairé chaque disque accessible au processus Sunshine. Utilisez cette fonction uniquement entre appareils personnels sur un réseau local de confiance. Consultez [SECURITY.md](SECURITY.md) et signalez les problèmes spécifiques au fork dans [BuffPlum/foundation-sunshine](https://github.com/BuffPlum/foundation-sunshine/issues).
+> **Version non officielle maintenue indépendamment par BuffPlum.** Le mode par défaut reste limité aux dossiers explicitement autorisés en lecture seule. Seul le mode expérimental BuffPlum « tous les disques », activé explicitement, expose au client appairé chaque disque accessible au processus Sunshine. Utilisez ce mode uniquement entre appareils personnels sur un réseau local de confiance. Consultez [SECURITY.md](SECURITY.md) et signalez les problèmes spécifiques au fork dans [BuffPlum/foundation-sunshine](https://github.com/BuffPlum/foundation-sunshine/issues).
 
 Fork basé sur LizardByte/Sunshine, offrant une documentation complète [Lire la documentation](https://docs.qq.com/aio/DSGdQc3htbFJjSFdO?p=YTpMj5JNNdB5hEKJhhqlSB).
 
