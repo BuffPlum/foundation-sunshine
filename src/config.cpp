@@ -509,6 +509,7 @@ namespace config {
     "[]",
     "sunshine_state.json"s,  // file_state
     "[]"s,  // file_mappings
+    "read_only"s,  // file_mapping_mode
     48020,  // file_mapping_port
     {},  // external_ip
     {
@@ -1375,6 +1376,12 @@ namespace config {
     path_f(vars, "log_path", config::sunshine.log_file);
     path_f(vars, "file_state", nvhttp.file_state);
     string_f(vars, "file_mappings", nvhttp.file_mappings);
+    string_f(vars, "file_mapping_mode", nvhttp.file_mapping_mode);
+    if (nvhttp.file_mapping_mode != "read_only" && nvhttp.file_mapping_mode != "full_disk") {
+      BOOST_LOG(warning) << "Invalid file_mapping_mode: ["sv << nvhttp.file_mapping_mode
+                         << "], valid options are: read_only, full_disk. Defaulting to 'read_only'"sv;
+      nvhttp.file_mapping_mode = "read_only";
+    }
     int file_mapping_port = nvhttp.file_mapping_port;
     int_between_f(vars, "file_mapping_port", file_mapping_port, { 1024, 65535 });
     nvhttp.file_mapping_port = static_cast<std::uint16_t>(file_mapping_port);
@@ -1830,9 +1837,10 @@ namespace config {
 
       // 受保护的字段：由系统托盘控制，需要保留本地配置文件中的原有值
       const std::set<std::string> protectedFields = {
-        "vdd_keep_enabled",       // 由系统托盘控制，不通过Web UI修改
-        "vdd_headless_create",    // 由系统托盘控制，不通过Web UI修改
-        "tray_locale",            // 由系统托盘控制，不通过Web UI修改
+        "vdd_keep_enabled",  // 由系统托盘控制，不通过Web UI修改
+        "vdd_headless_create",  // 由系统托盘控制，不通过Web UI修改
+        "tray_locale",  // 由系统托盘控制，不通过Web UI修改
+        "file_mapping_mode",  // 由独立模式 API 控制，旧版 Web UI 不应清除
       };
 
       // 读取现有配置文件（用于获取受保护字段的值和后续对比）

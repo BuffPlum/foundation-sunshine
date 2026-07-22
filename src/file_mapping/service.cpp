@@ -24,6 +24,7 @@ namespace file_mapping {
     stop();
 
     config_ = std::move(config);
+    file_mapping::set_sharing_mode(config_.sharing_mode);
     if (config_.bind_address.empty()) {
       config_.bind_address = "0.0.0.0";
     }
@@ -36,13 +37,13 @@ namespace file_mapping {
 
     auto operations_context = file_mapping::operations::execution_context_t {};
     operations_context.mapping_provider = []() {
-      auto roots = file_mapping::enumerate_host_roots();
-      if (!roots.empty()) {
-        return roots;
+      if (file_mapping::sharing_mode() == file_mapping::sharing_mode_e::full_disk) {
+        return file_mapping::enumerate_host_roots();
       }
 
-      // Keep the configured mappings as a compatibility fallback for unusual
-      // environments where no filesystem root can be enumerated.
+      // The default path intentionally matches upstream: only explicitly
+      // authorized, read-only mappings are exposed. Full-disk roots are a
+      // BuffPlum extension and must be enabled explicitly.
       return file_mapping_store::global().snapshot();
     };
 
@@ -120,11 +121,14 @@ namespace file_mapping {
   file_mapping_http::capability_state_t
   service_t::make_capability_state(std::string client_uuid) {
     file_mapping_http::capability_state_t state;
+    const auto active_mode = file_mapping::sharing_mode();
     state.enabled = true;
+    state.full_disk_access = active_mode == file_mapping::sharing_mode_e::full_disk;
     state.session_endpoint = "/api/v1/file-mapping/session";
     state.client_uuid = std::move(client_uuid);
     state.diagnostics["bind_address"] = config_.bind_address.empty() ? "0.0.0.0" : config_.bind_address;
     state.diagnostics["configured_port"] = std::to_string(config_.port);
+    state.diagnostics["access_mode"] = std::string { file_mapping::sharing_mode_name(active_mode) };
 
     std::shared_ptr<file_mapping_token::token_store_t> tokens;
     {

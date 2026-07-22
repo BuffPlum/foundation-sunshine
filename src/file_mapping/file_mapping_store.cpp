@@ -82,12 +82,12 @@ namespace file_mapping_store {
     }
 
     void
-    normalize_safe_mapping(file_mapping::mapping_t &mapping) {
-      // Deletion is meaningful only for read/write mappings. Execution and
-      // reparse-point traversal remain unsupported even in the full-disk fork.
-      if (mapping.mode != file_mapping::access_mode_e::readwrite) {
-        mapping.allow_delete = false;
-      }
+    normalize_read_only_mapping(file_mapping::mapping_t &mapping) {
+      // Configured mappings deliberately preserve the upstream read-only
+      // boundary. BuffPlum write access is supplied only by the explicit
+      // full-disk provider and never by widening an authorized mapping.
+      mapping.mode = file_mapping::access_mode_e::read;
+      mapping.allow_delete = false;
       mapping.allow_execute = false;
       mapping.follow_reparse_points = false;
     }
@@ -159,7 +159,7 @@ namespace file_mapping_store {
   void
   store_t::replace(std::vector<file_mapping::mapping_t> mappings) {
     for (auto &mapping : mappings) {
-      normalize_safe_mapping(mapping);
+      normalize_read_only_mapping(mapping);
     }
 
     std::scoped_lock lock { mutex_ };
@@ -261,7 +261,7 @@ namespace file_mapping_store {
         updated.mode = file_mapping::access_mode_e::read;
       }
       else if (mode == "readwrite") {
-        updated.mode = file_mapping::access_mode_e::readwrite;
+        return { false, {}, "readwrite mode is only available through BuffPlum full-disk mode" };
       }
       else {
         return { false, {}, "mode must be read or readwrite" };
@@ -271,9 +271,8 @@ namespace file_mapping_store {
       if (!patch["allow_delete"].is_boolean()) {
         return { false, {}, "allow_delete must be a boolean" };
       }
-      if (patch["allow_delete"].get<bool>() &&
-          updated.mode != file_mapping::access_mode_e::readwrite) {
-        return { false, {}, "allow_delete requires readwrite mode" };
+      if (patch["allow_delete"].get<bool>()) {
+        return { false, {}, "allow_delete is only available through BuffPlum full-disk mode" };
       }
       updated.allow_delete = patch["allow_delete"].get<bool>();
     }
@@ -316,7 +315,7 @@ namespace file_mapping_store {
       updated.clients = std::move(clients);
     }
 
-    normalize_safe_mapping(updated);
+    normalize_read_only_mapping(updated);
     *it = updated;
     return { true, updated, {} };
   }

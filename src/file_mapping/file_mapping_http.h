@@ -22,6 +22,7 @@ namespace file_mapping_http {
   struct capability_state_t {
     bool enabled = false;
     bool listening = false;
+    bool full_disk_access = false;
     std::string session_endpoint = "/api/v1/file-mapping/session";
     std::string session_url;
     std::string session_token;

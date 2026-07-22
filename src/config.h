@@ -183,6 +183,7 @@ namespace config {
 
     std::string file_state;
     std::string file_mappings;
+    std::string file_mapping_mode;
     std::uint16_t file_mapping_port;
 
     std::string external_ip;

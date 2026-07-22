@@ -1,6 +1,6 @@
 # Windows 双端目录映射实施方案
 
-> **当前实现状态（2026-07-18）：** 配套的 Foundation Sunshine 与 Moonlight fork 已包含 WebUI 共享管理、只读主机快照、可选 `readwrite` 共享、`mkdir`/分块 `write` RPC，以及 `Send to Host` / `Sent to Host` 客户端流程。本文保留分阶段设计历史，后文把这些能力写成“尚未实现”的条目属于历史待办；面向用户的规则请看 [file-transfer.md](file-transfer.md)。
+> **当前实现状态（2026-07-22）：** 默认 `read_only` 模式直接复用上游授权 mapping、token、WSS、路径校验和配置事务，并强制配置 mapping 只读。显式设置 `file_mapping_mode = full_disk` 后，BuffPlum 扩展 provider 才会枚举磁盘并开放 `mkdir`、分块 `write`、重命名、删除、冲突策略和串流拖放。本文保留分阶段设计历史；面向用户的最终规则请看 [file-transfer.md](file-transfer.md)。
 
 ## 目标
 
