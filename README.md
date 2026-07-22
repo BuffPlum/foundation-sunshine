@@ -24,8 +24,6 @@
 > 上游当前因安全边界、测试和长期维护成本决定不合并或维护全盘文件传输。本 Fork 将独立维护该能力；Fork 专属问题请提交到 [BuffPlum/foundation-sunshine Issues](https://github.com/BuffPlum/foundation-sunshine/issues)，不要提交给上游。
 >
 > 独立版本号使用 `vYYYY.MDD-buffplum.N`，发布步骤见 [BuffPlum Release Process](.github/BUFFPLUM_RELEASES.md)。
-> 
->咕咕咕
 ### ░▒▓ 核心特性
 
 - **HDR 全链路** — 双格式编码 (PQ + HLG)・逐帧 GPU 亮度分析・HDR10+ / HDR Vivid 动态元数据・完整静态元数据透传
