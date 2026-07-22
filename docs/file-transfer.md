@@ -47,7 +47,7 @@ PATCH /api/v1/file-mapping/mode
 
 ## 全盘模式使用方法
 
-1. 在 Sunshine 配置中设置 `file_mapping_mode = full_disk` 并重启 Sunshine，或通过本机管理 API 修改模式后重新连接串流。
+1. 打开 Sunshine Web UI 的 **配置 → 文件传输 → 文件访问模式**，选择 **BuffPlum 全盘读写模式（实验性）**，阅读风险提示、勾选确认并再次点击启用。该操作通过本机管理 API 立即持久化，不需要点击页面右下角的普通保存按钮；也可以手动设置 `file_mapping_mode = full_disk` 后重启 Sunshine。
 2. 使用配套 Moonlight 完成配对并启动桌面串流。
 3. 按 `Ctrl+Alt+Shift+O` 打开悬浮菜单，选择 **Host Files / 主机文件**。
 4. 左侧选择客户端磁盘和目录，右侧选择主机的 `C:`、`D:`、`E:` 等磁盘和目录。
