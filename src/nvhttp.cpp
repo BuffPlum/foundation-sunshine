@@ -950,6 +950,9 @@ namespace nvhttp {
     file_mapping_config.certificate_file = config::nvhttp.cert;
     file_mapping_config.private_key_file = config::nvhttp.pkey;
     file_mapping_config.mappings_json = config::nvhttp.file_mappings;
+    file_mapping_config.sharing_mode = config::nvhttp.file_mapping_mode == "full_disk" ?
+                                         file_mapping::sharing_mode_e::full_disk :
+                                         file_mapping::sharing_mode_e::read_only;
     file_mapping_config.authorize_client = is_file_mapping_client_paired;
     file_mapping_service.start(std::move(file_mapping_config));
 

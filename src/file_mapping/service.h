@@ -15,6 +15,7 @@
 
 #include <boost/asio/io_context.hpp>
 
+#include "file_mapping.h"
 #include "file_mapping_http.h"
 #include "file_mapping_token.h"
 #include "file_mapping_ws_server.h"
@@ -30,6 +31,7 @@ namespace file_mapping {
       std::string certificate_file;
       std::string private_key_file;
       std::string mappings_json;
+      sharing_mode_e sharing_mode = sharing_mode_e::read_only;
       client_authorizer_fn authorize_client;
     };
 

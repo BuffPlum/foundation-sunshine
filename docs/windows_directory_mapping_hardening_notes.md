@@ -389,6 +389,7 @@ Sunshine 侧已拆出 `src/file_mapping/` 内置 feature module。`file_mapping:
 - 已新增 Sunshine 本机管理 API 和 `file_mapping_store`，支持运行期创建、列出、更新、删除 mapping，并持久化回 `file_mappings`。
 - 管理 API 写入采用失败回滚：配置持久化失败时恢复旧 store，避免 HTTP 返回失败但运行态已经生效。
 - 第一阶段固定只读：`readwrite`、`allow_delete=true`、`allow_execute=true`、`follow_reparse_points=true` 都不会进入运行时 store。
+- BuffPlum 写操作不扩大上述 store 权限；它只在显式 `file_mapping_mode = full_disk` 时通过独立的动态根 provider 暴露，并由 capability 声明 `buffplum_full_disk`。
 - WSS 已增加第一批资源闸门：token 全局/单客户端配额、签发间隔、Beast message size limit、active session 上限、write queue 上限。
 - 目录 listing 已增加默认返回数量上限，并通过 `truncated=true` 告诉客户端需要分页/继续读取。
 - RPC 已增加最小 job model：`list`、`stat`、`read` 回包携带 `job_id` / `job`，并支持 `job_status` 与 `cancel_job` 查询/取消入口。

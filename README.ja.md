@@ -15,7 +15,7 @@
 ---
 
 > [!WARNING]
-> **BuffPlum が独立して保守する非公式版です。** 全ディスクのファイル転送では、Sunshine プロセスがアクセスできるすべてのドライブがペアリング済みクライアントに公開されます。個人所有の端末を信頼できる LAN 内で接続する場合にのみ使用してください。[SECURITY.md](SECURITY.md) を確認し、この Fork 固有の問題は [BuffPlum/foundation-sunshine](https://github.com/BuffPlum/foundation-sunshine/issues) に報告してください。
+> **BuffPlum が独立して保守する非公式版です。** 既定では、明示的に許可したフォルダーだけを読み取り専用で共有します。Sunshine プロセスがアクセスできるすべてのドライブを公開するのは、実験的な BuffPlum 全ディスクモードを明示的に有効化した場合だけです。このモードは個人所有の端末を信頼できる LAN 内で接続する場合にのみ使用してください。[SECURITY.md](SECURITY.md) を確認し、この Fork 固有の問題は [BuffPlum/foundation-sunshine](https://github.com/BuffPlum/foundation-sunshine/issues) に報告してください。
 
 LizardByte/Sunshineをベースにしたフォークで、完全なドキュメントサポートを提供します [Read the Docs](https://docs.qq.com/aio/DSGdQc3htbFJjSFdO?p=YTpMj5JNNdB5hEKJhhqlSB)。
 

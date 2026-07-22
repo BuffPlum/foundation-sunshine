@@ -10,7 +10,7 @@
 [![Deutsch](https://img.shields.io/badge/Deutsch-yellow?style=flat-square)](README.de.md)
 [![日本語](https://img.shields.io/badge/日本語-purple?style=flat-square)](README.ja.md)
 
-基于 [AlkaidLab/foundation-sunshine](https://github.com/AlkaidLab/foundation-sunshine) 独立维护的 BuffPlum 增强分支，专注于 Windows 游戏串流体验
+基于 [AlkaidLab/foundation-sunshine](https://github.com/AlkaidLab/foundation-sunshine) 独立维护的 BuffPlum 增强分支，定位为可信局域网下的高级全盘文件管理实验版，并继续专注 Windows 游戏串流体验
 
 [BuffPlum Releases](https://github.com/BuffPlum/foundation-sunshine/releases) · [配套 Moonlight](https://github.com/BuffPlum/moonlight-qt) · [使用文档](https://docs.qq.com/aio/DSGdQc3htbFJjSFdO?p=YTpMj5JNNdB5hEKJhhqlSB) · [LizardByte 文档](https://docs.lizardbyte.dev/projects/sunshine/latest/)
 
@@ -19,9 +19,9 @@
 ---
 
 > [!WARNING]
-> **这是 BuffPlum 独立维护的非官方版本。** 它不由 AlkaidLab、LizardByte 或 Moonlight 上游提供支持。全盘文件传输会向已配对客户端公开 Sunshine 进程能够访问的全部磁盘，仅建议在可信局域网和个人设备间使用。安装前请阅读 [安全说明](SECURITY.md)。
+> **这是 BuffPlum 独立维护的非官方版本。** 默认文件模式复用上游授权 mapping、token、WSS、路径校验和配置事务，只提供授权目录的只读访问。显式启用 BuffPlum 全盘模式后，已配对客户端才能访问 Sunshine 进程有权访问的全部磁盘并执行写入操作；该实验能力仅建议用于可信局域网和个人设备。安装前请阅读 [安全说明](SECURITY.md)。
 >
-> 上游当前因安全边界、测试和长期维护成本决定不合并或维护全盘文件传输。本 Fork 将独立维护该能力；Fork 专属问题请提交到 [BuffPlum/foundation-sunshine Issues](https://github.com/BuffPlum/foundation-sunshine/issues)，不要提交给上游。
+> 上游维护安全、通用的只读 File Mapping 地基，但因安全边界、测试和长期维护成本不维护全盘读写扩展。本 Fork 只独立维护这层差异；Fork 专属问题请提交到 [BuffPlum/foundation-sunshine Issues](https://github.com/BuffPlum/foundation-sunshine/issues)，不要提交给上游。
 >
 > 独立版本号使用 `vYYYY.MDD-buffplum.N`，发布步骤见 [BuffPlum Release Process](.github/BUFFPLUM_RELEASES.md)。
 
@@ -31,7 +31,7 @@
 - **虚拟显示器** — 深度集成 [ZakoVDD](https://github.com/qiin2333/zako-vdd)・Zako Direct 零拷贝借帧・5 种屏幕模式・多客户端 GUID 会话
 - **音频增强** — 7.1.4 环绕声 (12ch)・Opus DRED 丢包恢复・持续音频流・远程麦克风・虚拟扬声器位深匹配
 - **编码优化** — NVENC SDK 13.0・AMF QVBR/HQVBR/多硬件实例・编码器结果缓存 (260x)・自适应下采样・Vulkan 编码器
-- **全盘双向文件传输** — 自动枚举主机磁盘・串流窗口直接拖入・双栏文件管理・同名保留/覆盖・新建/重命名/删除・已配对设备授权（[动机、使用与风险说明](docs/file-transfer.md)）
+- **高级全盘文件管理（实验性、需显式启用）** — 默认保持上游兼容只读共享；增强模式提供磁盘枚举・串流窗口直接拖入・双栏文件管理・同名保留/覆盖・新建/重命名/删除（[模式、使用与风险说明](docs/file-transfer.md)）
 - **控制面板** — Tauri 2 + Vue 3 + Vite・深色模式・QR 配对・实时监控・WebUI 渲染优化
 - **输入增强** — 客户端独立配置・原生精密触摸板适配・虚拟鼠标驱动 (vmouse)
 

@@ -2489,6 +2489,58 @@ namespace confighttp {
   }
 
   void
+  getFileMappingMode(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) return;
+    print_req(request);
+
+    json body;
+    body["ok"] = true;
+    body["mode"] = std::string { file_mapping::sharing_mode_name(file_mapping::sharing_mode()) };
+    body["modes"] = json::array({ "read_only", "full_disk" });
+    body["requires_stream_reconnect"] = true;
+    write_json(std::move(response), SimpleWeb::StatusCode::success_ok, body);
+  }
+
+  void
+  updateFileMappingMode(resp_https_t response, req_https_t request) {
+    if (!check_content_type(response, request, "application/json")) return;
+    if (!authenticate(response, request)) return;
+    print_req(request);
+
+    json input;
+    if (!read_json_body(response, request, input)) return;
+    if (!input.is_object() || !input.contains("mode") || !input["mode"].is_string()) {
+      write_json_error(std::move(response), SimpleWeb::StatusCode::client_error_bad_request, "missing string field: mode");
+      return;
+    }
+
+    const auto requested_name = input["mode"].get<std::string>();
+    const auto requested_mode = file_mapping::parse_sharing_mode(requested_name);
+    if (!requested_mode) {
+      write_json_error(std::move(response), SimpleWeb::StatusCode::client_error_bad_request, "mode must be read_only or full_disk");
+      return;
+    }
+
+    {
+      std::scoped_lock transaction_lock { file_mapping_store_transaction_mutex };
+      if (config::nvhttp.file_mapping_mode != requested_name &&
+          !config::update_config({ { "file_mapping_mode", requested_name } })) {
+        write_json_error(std::move(response), SimpleWeb::StatusCode::server_error_internal_server_error, "failed to persist file mapping mode");
+        return;
+      }
+
+      config::nvhttp.file_mapping_mode = requested_name;
+      file_mapping::set_sharing_mode(*requested_mode);
+    }
+
+    json body;
+    body["ok"] = true;
+    body["mode"] = requested_name;
+    body["requires_stream_reconnect"] = true;
+    write_json(std::move(response), SimpleWeb::StatusCode::success_ok, body);
+  }
+
+  void
   listFileMappings(resp_https_t response, req_https_t request) {
     if (!authenticate(response, request)) return;
     print_req(request);
@@ -3203,6 +3255,8 @@ namespace confighttp {
     server.resource["^/api/ai/config$"]["POST"] = saveAiConfigEndpoint;
     server.resource["^/api/ai/chat/completions$"]["POST"] = proxyAiChat;
     server.resource["^/api/ai/chat/completions$"]["OPTIONS"] = handleAiCors;
+    server.resource["^/api/v1/file-mapping/mode$"]["GET"] = getFileMappingMode;
+    server.resource["^/api/v1/file-mapping/mode$"]["PATCH"] = updateFileMappingMode;
     server.resource["^/api/v1/file-mapping/mappings$"]["GET"] = listFileMappings;
     server.resource["^/api/v1/file-mapping/mappings$"]["POST"] = createFileMapping;
     server.resource["^/api/v1/file-mapping/mappings/([A-Za-z0-9_\\-]{1,64})$"]["PATCH"] = updateFileMapping;

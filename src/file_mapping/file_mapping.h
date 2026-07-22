@@ -6,11 +6,17 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace file_mapping {
+  enum class sharing_mode_e {
+    read_only,
+    full_disk
+  };
+
   enum class access_mode_e {
     read,
     readwrite
@@ -58,12 +64,23 @@ namespace file_mapping {
   bool
   is_safe_relative_path(std::string_view remote_path, std::string *message = nullptr);
 
+  std::optional<sharing_mode_e>
+  parse_sharing_mode(std::string_view mode);
+
+  std::string_view
+  sharing_mode_name(sharing_mode_e mode);
+
+  void
+  set_sharing_mode(sharing_mode_e mode);
+
+  sharing_mode_e
+  sharing_mode();
+
   /**
-   * Enumerate filesystem roots that are directly accessible to the Sunshine
-   * process. On Windows, each currently mounted drive is exposed as an
-   * independent mapping (drive-c, drive-d, ...). This is intentionally
-   * evaluated at connection/operation time so removable drives can appear or
-   * disappear without editing Sunshine's configuration.
+   * Enumerate filesystem roots for the explicitly enabled BuffPlum full-disk
+   * mode. On Windows, each currently mounted drive is exposed as an independent
+   * mapping (drive-c, drive-d, ...). The default read-only mode never calls
+   * this provider and continues to use the upstream authorized mapping store.
    */
   std::vector<mapping_t>
   enumerate_host_roots();

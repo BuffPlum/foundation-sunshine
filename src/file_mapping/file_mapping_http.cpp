@@ -116,6 +116,7 @@ namespace file_mapping_http {
     // inside write requests so the client does not have to implement a
     // second binary WebSocket framing protocol.
     body["data"] = "json-base64";
+    body["access_mode"] = state.full_disk_access ? "full_disk" : "read_only";
     body["session_endpoint"] = state.session_endpoint.empty() ? "/api/v1/file-mapping/session" : state.session_endpoint;
     body["session_url"] = make_request_session_url(state);
     body["session_token"] = state.session_token;
@@ -132,14 +133,21 @@ namespace file_mapping_http {
     }
     body["features"] = nlohmann::json::array({ "mappings",
       "transfer_jobs",
-      "write_chunks",
       "explicit_authorization",
       "cancel_job" });
+    if (state.full_disk_access) {
+      body["features"].push_back("buffplum_full_disk");
+      body["features"].push_back("write_chunks");
+      body["features"].push_back("conflict_policies");
+      body["features"].push_back("stream_drop");
+    }
     body["limits"] = {
       { "binary_header_size", file_mapping::rpc::kBinaryHeaderSize },
-      { "max_write_chunk_bytes", 512 * 1024 },
       { "max_protocol_version", file_mapping::rpc::kProtocolVersion }
     };
+    if (state.full_disk_access) {
+      body["limits"]["max_write_chunk_bytes"] = 512 * 1024;
+    }
 
     return { SimpleWeb::StatusCode::success_ok, body.dump(), json_headers() };
   }

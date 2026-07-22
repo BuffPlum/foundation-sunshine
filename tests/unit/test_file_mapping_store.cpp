@@ -79,7 +79,7 @@ TEST(FileMappingStore, QuickShareAcceptsWindowsVerbatimPath) {
 }
 #endif
 
-TEST(FileMappingStore, ReplacePreservesDeleteButNormalizesExecutionAndLinks) {
+TEST(FileMappingStore, ReplaceNormalizesConfiguredMappingsToReadOnly) {
   temp_store_tree_t tree;
   file_mapping_store::store_t store;
   file_mapping::mapping_t mapping;
@@ -95,8 +95,8 @@ TEST(FileMappingStore, ReplacePreservesDeleteButNormalizesExecutionAndLinks) {
 
   auto snapshot = store.snapshot();
   ASSERT_EQ(snapshot.size(), 1);
-  EXPECT_EQ(snapshot.front().mode, file_mapping::access_mode_e::readwrite);
-  EXPECT_TRUE(snapshot.front().allow_delete);
+  EXPECT_EQ(snapshot.front().mode, file_mapping::access_mode_e::read);
+  EXPECT_FALSE(snapshot.front().allow_delete);
   EXPECT_FALSE(snapshot.front().allow_execute);
   EXPECT_FALSE(snapshot.front().follow_reparse_points);
 }
@@ -136,22 +136,22 @@ TEST(FileMappingStore, AcceptsSignedJsonIntegerMaxFileSize) {
   EXPECT_EQ(updated.mapping.max_file_size, 42);
 }
 
-TEST(FileMappingStore, EnablesDeletePermissionForReadWriteMapping) {
+TEST(FileMappingStore, RejectsDeletePermissionOutsideFullDiskProvider) {
   temp_store_tree_t tree;
   file_mapping_store::store_t store;
   auto created = store.add_quick_share(tree.root / "Downloads");
   ASSERT_TRUE(created.ok) << created.error;
 
   auto writable = store.update(created.mapping.id, {
-                                                     { "mode", "readwrite" },
                                                      { "allow_delete", true },
                                                    });
 
-  ASSERT_TRUE(writable.ok) << writable.error;
-  EXPECT_TRUE(store.snapshot().front().allow_delete);
+  EXPECT_FALSE(writable.ok);
+  EXPECT_EQ(writable.error, "allow_delete is only available through BuffPlum full-disk mode");
+  EXPECT_FALSE(store.snapshot().front().allow_delete);
 }
 
-TEST(FileMappingStore, EnablesReadWriteModeForUploads) {
+TEST(FileMappingStore, RejectsReadWriteModeOutsideFullDiskProvider) {
   temp_store_tree_t tree;
   file_mapping_store::store_t store;
   auto created = store.add_quick_share(tree.root / "Downloads");
@@ -161,8 +161,9 @@ TEST(FileMappingStore, EnablesReadWriteModeForUploads) {
                                                     { "mode", "readwrite" },
                                                   });
 
-  ASSERT_TRUE(updated.ok) << updated.error;
-  EXPECT_EQ(store.snapshot().front().mode, file_mapping::access_mode_e::readwrite);
+  EXPECT_FALSE(updated.ok);
+  EXPECT_EQ(updated.error, "readwrite mode is only available through BuffPlum full-disk mode");
+  EXPECT_EQ(store.snapshot().front().mode, file_mapping::access_mode_e::read);
 }
 
 TEST(FileMappingStore, RejectsUnsupportedDangerousPermissions) {
