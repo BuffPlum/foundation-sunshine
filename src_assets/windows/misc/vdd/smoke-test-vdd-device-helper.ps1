@@ -179,9 +179,7 @@ try {
 
     $probeFailedClosed = $false
     try {
-        $Action = 'Probe'
-        $InfPath = $HelperScript
-        [void] (Invoke-VddDeviceHelper)
+        [void] (Get-VddState $HelperScript)
     }
     catch {
         $probeFailedClosed = $_.Exception.Message -like '*simulated device enumeration failure*'
@@ -199,36 +197,152 @@ try {
     $secondFakeDevice = New-TestDevice '100.0.16.6' 'OK' 'oem42.inf'
     $secondFakeDevice.InstanceId = 'ROOT\DISPLAY\0043'
     $script:fakeDevices = @($firstFakeDevice, $secondFakeDevice)
+    $script:removalCalls = 0
+    $script:pollsAfterRemoval = 0
+    function Get-VddDevices {
+        if ($script:removalCalls -gt 0) {
+            $script:pollsAfterRemoval++
+            if ($script:pollsAfterRemoval -ge 3) {
+                $script:fakeDevices = @()
+            }
+        }
+        return @($script:fakeDevices)
+    }
+    function Invoke-NefconRemoval {
+        $script:removalCalls++
+        return 0
+    }
+
+    [void] (Remove-AllVddDevices $HelperScript 2)
+    Assert-Equal 0 $script:fakeDevices.Count 'All duplicate device nodes must be removed.'
+    Assert-Equal 1 $script:removalCalls 'An asynchronous removal must not receive overlapping requests.'
+
+    $script:fakeDevices = @(New-TestDevice '100.0.16.6')
+    $script:removalCalls = 0
     function Get-VddDevices {
         return @($script:fakeDevices)
     }
     function Invoke-NefconRemoval {
-        $script:fakeDevices = @($script:fakeDevices | Select-Object -Skip 1)
-        return 0
-    }
-
-    $NefconPath = $HelperScript
-    $TimeoutSeconds = 2
-    [void] (Remove-AllVddDevices)
-    Assert-Equal 0 $script:fakeDevices.Count 'All duplicate device nodes must be removed.'
-
-    $script:fakeDevices = @(New-TestDevice '100.0.16.6')
-    function Invoke-NefconRemoval {
+        $script:removalCalls++
         return 1
     }
     $removalFailedClosed = $false
     try {
-        [void] (Remove-AllVddDevices)
+        [void] (Remove-AllVddDevices $HelperScript 30)
     }
     catch {
-        $removalFailedClosed = $_.Exception.Message -like '*made no progress*'
+        $removalFailedClosed = $_.Exception.Message -like '*exit code 1*'
     }
-    Assert-Equal $true $removalFailedClosed 'A failed removal must abort before creating another node.'
+    Assert-Equal $true $removalFailedClosed 'A failed nefcon request must abort immediately.'
+    Assert-Equal 1 $script:removalCalls 'A stalled removal must not repeatedly invoke nefcon.'
+
+    $script:removalCalls = 0
+    function Invoke-NefconRemoval {
+        $script:removalCalls++
+        return 0
+    }
+    $removalTimedOut = $false
+    try {
+        [void] (Remove-AllVddDevices $HelperScript 1)
+    }
+    catch {
+        $removalTimedOut = $_.Exception.Message -like '*timed out*'
+    }
+    Assert-Equal $true $removalTimedOut 'A successful request without PnP progress must time out.'
+    Assert-Equal 1 $script:removalCalls 'A timed-out removal must not repeatedly invoke nefcon.'
 }
 finally {
     ${function:Get-VddDevices} = $originalGetVddDevices
     ${function:Invoke-NefconRemoval} = $originalInvokeNefconRemoval
     Remove-Variable -Name fakeDevices -Scope Script -ErrorAction SilentlyContinue
+    Remove-Variable -Name removalCalls -Scope Script -ErrorAction SilentlyContinue
+    Remove-Variable -Name pollsAfterRemoval -Scope Script -ErrorAction SilentlyContinue
+    Remove-Variable -Name removalTimedOut -ErrorAction SilentlyContinue
+}
+
+$originalResolveVddPayload = ${function:Resolve-VddPayload}
+$originalGetVddPaths = ${function:Get-VddPaths}
+$originalGetVddState = ${function:Get-VddState}
+$originalStageVddPayload = ${function:Stage-VddPayload}
+$originalRemoveAllVddDevices = ${function:Remove-AllVddDevices}
+$originalRemoveVddRegistry = ${function:Remove-VddRegistry}
+$originalCleanupVddPackages = ${function:Cleanup-VddPackages}
+$originalSetVddConfiguration = ${function:Set-VddConfiguration}
+$originalInstallVddDevice = ${function:Install-VddDevice}
+try {
+    function Resolve-VddPayload {
+        return [pscustomobject]@{
+            RawBuild = '22000'
+            BuildNumber = 22000
+            DriverDir = $PSScriptRoot
+            ConfigSource = $HelperScript
+            Paths = [pscustomobject]@{ Nefcon = $HelperScript }
+        }
+    }
+    function Get-VddPaths {
+        return [pscustomobject]@{
+            Nefcon = $HelperScript
+            Dist = Join-Path $PSScriptRoot 'missing-test-dist'
+        }
+    }
+    function Get-VddState {
+        return [pscustomobject]@{
+            BundledVersion = '100.0.16.6'
+            Decision = $script:workflowDecision
+        }
+    }
+    function Stage-VddPayload { $script:workflowCalls += 'Stage' }
+    function Remove-AllVddDevices { $script:workflowCalls += 'Remove' }
+    function Remove-VddRegistry { $script:workflowCalls += 'Registry' }
+    function Cleanup-VddPackages([string] $ExpectedVersion = '') {
+        $script:workflowCalls += "Cleanup:$ExpectedVersion"
+    }
+    function Set-VddConfiguration { $script:workflowCalls += 'Configure' }
+    function Install-VddDevice { $script:workflowCalls += 'Install' }
+
+    $script:workflowCalls = @()
+    $script:workflowDecision = [pscustomobject]@{
+        DeviceCount = 1
+        CleanupRequired = 0
+        InstallRequired = 0
+        CurrentVersion = '100.0.16.6'
+        CurrentStatus = 'OK'
+        CurrentInf = 'oem42.inf'
+    }
+    Invoke-VddInstall $PSScriptRoot 'Run'
+    Assert-Equal 'Stage,Cleanup:100.0.16.6,Configure' ($script:workflowCalls -join ',') `
+        'A healthy matching device must keep its package and skip reinstall.'
+
+    $script:workflowCalls = @()
+    $script:workflowDecision = [pscustomobject]@{
+        DeviceCount = 1
+        CleanupRequired = 1
+        InstallRequired = 1
+        CurrentVersion = '100.0.16.5'
+        CurrentStatus = 'OK'
+        CurrentInf = 'oem40.inf'
+    }
+    Invoke-VddInstall $PSScriptRoot 'Run'
+    Assert-Equal 'Stage,Remove,Registry,Cleanup:,Configure,Install' ($script:workflowCalls -join ',') `
+        'An upgrade must remove, prune, configure, and install in order.'
+
+    $script:workflowCalls = @()
+    Invoke-VddUninstall $PSScriptRoot
+    Assert-Equal 'Remove,Cleanup:,Registry' ($script:workflowCalls -join ',') `
+        'Uninstall must remove devices before packages and always clean the registry.'
+}
+finally {
+    ${function:Resolve-VddPayload} = $originalResolveVddPayload
+    ${function:Get-VddPaths} = $originalGetVddPaths
+    ${function:Get-VddState} = $originalGetVddState
+    ${function:Stage-VddPayload} = $originalStageVddPayload
+    ${function:Remove-AllVddDevices} = $originalRemoveAllVddDevices
+    ${function:Remove-VddRegistry} = $originalRemoveVddRegistry
+    ${function:Cleanup-VddPackages} = $originalCleanupVddPackages
+    ${function:Set-VddConfiguration} = $originalSetVddConfiguration
+    ${function:Install-VddDevice} = $originalInstallVddDevice
+    Remove-Variable -Name workflowCalls -Scope Script -ErrorAction SilentlyContinue
+    Remove-Variable -Name workflowDecision -Scope Script -ErrorAction SilentlyContinue
 }
 
 $results | Format-Table -AutoSize
