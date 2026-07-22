@@ -41,6 +41,7 @@ param(
     [string]$QtBin = 'D:\dev\qt\6.11.1\msvc2022_64\bin',
     [string]$NodeBin = 'D:\DevTools\Scoop\apps\nvm\current\nodejs\nodejs',
     [string]$MsysUcrtBin = 'D:\dev\msys64\ucrt64\bin',
+    [string]$CargoBin,
 
     [switch]$SkipTests,
     [switch]$NoParallelBuilds
@@ -122,6 +123,30 @@ function Require-Command {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "Required command was not found: $Name"
     }
+}
+
+function Resolve-CargoExecutable {
+    param([string]$PreferredBin)
+
+    if ($PreferredBin) {
+        $preferredCargo = Join-Path $PreferredBin 'cargo.exe'
+        if (Test-Path -LiteralPath $preferredCargo) {
+            return $preferredCargo
+        }
+        throw "Cargo was not found under the requested directory: $PreferredBin"
+    }
+
+    $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
+    if ($cargoCommand) {
+        return $cargoCommand.Source
+    }
+
+    $rustupCargo = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)) '.cargo/bin/cargo.exe'
+    if (Test-Path -LiteralPath $rustupCargo) {
+        return $rustupCargo
+    }
+
+    throw 'Cargo was not found. Install the Rust MSVC toolchain before building a Sunshine release.'
 }
 
 function Assert-ChildPath {
@@ -387,6 +412,8 @@ function Build-SunshineRelease {
 
     $nodeExecutable = Join-Path $NodeBin 'node.exe'
     $npmCommand = Join-Path $NodeBin 'npm.cmd'
+    $cargoExecutable = Resolve-CargoExecutable -PreferredBin $CargoBin
+    $cargoDirectory = Split-Path -Parent $cargoExecutable
     foreach ($path in @($nodeExecutable, $npmCommand)) {
         if (-not (Test-Path -LiteralPath $path)) {
             throw "MSVC Node.js tool was not found: $path"
@@ -396,6 +423,9 @@ function Build-SunshineRelease {
     Invoke-Native -FilePath git -ArgumentList @('-C', $SunshineRoot, 'submodule', 'update', '--init', '--recursive')
 
     $buildRoot = Join-Path $SunshineRoot 'build-ucrt64'
+    $controlPanelRoot = Join-Path $SunshineRoot 'src_assets/common/sunshine-control-panel'
+    $controlPanelTarget = Join-Path $controlPanelRoot 'src-tauri/target'
+    $localGui = Join-Path $controlPanelTarget 'release/sunshine-gui.exe'
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
     $oldPath = $env:PATH
     $oldBranch = $env:BRANCH
@@ -423,7 +453,30 @@ function Build-SunshineRelease {
         }
         Invoke-Native -FilePath $npmCommand -ArgumentList @('run', 'build') -WorkingDirectory $SunshineRoot
 
-        $env:PATH = "$MsysUcrtBin;D:\dev\msys64\usr\bin;$NodeBin;$oldPath"
+        # Release packages must use the GUI recorded by this Sunshine commit.
+        # Falling back to the latest pre-built GUI can silently combine a new
+        # Sunshine backend with an older desktop bridge.
+        Invoke-Native -FilePath $npmCommand -ArgumentList @('ci', '--registry=https://registry.npmjs.org', '--no-audit', '--no-fund') -WorkingDirectory $controlPanelRoot
+        if (-not $SkipTests) {
+            Invoke-Native -FilePath $nodeExecutable -ArgumentList @(
+                '--test',
+                'src/renderer/composables/vddInstallRecovery.test.js',
+                'src/renderer/composables/useVddStatusLabel.test.js'
+            ) -WorkingDirectory $controlPanelRoot
+        }
+        Invoke-Native -FilePath $npmCommand -ArgumentList @('run', 'build:renderer') -WorkingDirectory $controlPanelRoot
+        Invoke-Native -FilePath $cargoExecutable -ArgumentList @(
+            'build',
+            '--manifest-path', 'src-tauri/Cargo.toml',
+            '--target-dir', $controlPanelTarget,
+            '--release',
+            '--locked'
+        ) -WorkingDirectory $controlPanelRoot
+        if (-not (Test-Path -LiteralPath $localGui)) {
+            throw "Locally-built Sunshine GUI was not found: $localGui"
+        }
+
+        $env:PATH = "$MsysUcrtBin;D:\dev\msys64\usr\bin;$NodeBin;$cargoDirectory;$oldPath"
 
         $configureArgs = @(
             '-S', '.', '-B', 'build-ucrt64', '-G', 'Ninja',
@@ -434,6 +487,8 @@ function Build-SunshineRelease {
             '-DBUILD_WEB_UI=OFF',
             '-DSUNSHINE_ASSETS_DIR=assets',
             '-DDRIVER_DEPS_REQUIRED=OFF',
+            '-DSUNSHINE_PREFER_LOCAL_GUI=ON',
+            '-DFETCH_GUI=OFF',
             '-DSUNSHINE_PUBLISHER_NAME=BuffPlum',
             '-DSUNSHINE_PUBLISHER_WEBSITE=https://github.com/BuffPlum/foundation-sunshine',
             '-DSUNSHINE_PUBLISHER_ISSUE_URL=https://github.com/BuffPlum/foundation-sunshine/issues'
@@ -449,6 +504,15 @@ function Build-SunshineRelease {
         Reset-Directory -Path $staging -Parent $buildRoot
         Reset-Directory -Path $cpackOutput -Parent $buildRoot
         Invoke-Native -FilePath (Join-Path $MsysUcrtBin 'cmake.exe') -ArgumentList @('--install', 'build-ucrt64', '--prefix', $staging) -WorkingDirectory $SunshineRoot
+        $stagedGui = Join-Path $staging 'assets/gui/sunshine-gui.exe'
+        if (-not (Test-Path -LiteralPath $stagedGui)) {
+            throw "Staged Sunshine GUI was not found: $stagedGui"
+        }
+        $localGuiHash = (Get-FileHash -LiteralPath $localGui -Algorithm SHA256).Hash
+        $stagedGuiHash = (Get-FileHash -LiteralPath $stagedGui -Algorithm SHA256).Hash
+        if ($localGuiHash -ne $stagedGuiHash) {
+            throw "Packaged Sunshine GUI does not match the locally-built control panel."
+        }
         Invoke-Native -FilePath $innoCompiler -ArgumentList @('build-ucrt64\sunshine_installer.iss') -WorkingDirectory $SunshineRoot
         Invoke-Native -FilePath (Join-Path $MsysUcrtBin 'cpack.exe') -ArgumentList @('-G', 'ZIP', '--config', '.\CPackConfig.cmake', '--verbose') -WorkingDirectory $buildRoot
     }
@@ -753,6 +817,7 @@ if ($buildRequested -and $Target -eq 'All' -and -not $NoParallelBuilds) {
         QtBin = $QtBin
         NodeBin = $NodeBin
         MsysUcrtBin = $MsysUcrtBin
+        CargoBin = $CargoBin
         NoParallelBuilds = $true
     }
     $moonlightParameters = @{
@@ -764,6 +829,7 @@ if ($buildRequested -and $Target -eq 'All' -and -not $NoParallelBuilds) {
         QtBin = $QtBin
         NodeBin = $NodeBin
         MsysUcrtBin = $MsysUcrtBin
+        CargoBin = $CargoBin
         NoParallelBuilds = $true
     }
     if ($SkipTests) {
