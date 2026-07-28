@@ -412,6 +412,15 @@ namespace platf::dxgi {
         }
       }
 
+      if (status == capture_e::ok && img_out) {
+        // Keep the encoder-ready time separate from the producer's presentation
+        // timestamp: the former measures host processing, while the latter drives RTP PTS.
+        if (!img_out->pipeline_trace) {
+          img_out->pipeline_trace.emplace();
+        }
+        img_out->pipeline_trace->capture_ready = std::chrono::steady_clock::now();
+      }
+
       switch (status) {
         case platf::capture_e::reinit:
         case platf::capture_e::error:
@@ -1129,6 +1138,11 @@ namespace platf {
       BOOST_LOG(warning) << "WGC capture is not available in service mode. Automatically switching to DDX capture."sv;
       try_types = { "ddx" };
     }
+    else if (capture_backend == "vdd") {
+      // Direct VDD capture is preferred, but DDX remains a safe last resort
+      // when the producer cannot represent the selected desktop mode.
+      try_types = { "vdd", "ddx" };
+    }
     else {
       try_types = { capture_backend };
     }
@@ -1164,6 +1178,10 @@ namespace platf {
 
       if (ret) {
         return ret;
+      }
+
+      if (type == "vdd") {
+        BOOST_LOG(warning) << "[vdd] direct capture initialization failed; trying DDX capture for the selected VDD output"sv;
       }
     }
 

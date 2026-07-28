@@ -34,6 +34,7 @@
 #include "config.h"
 #include "confighttp.h"
 #include "display_device/session.h"
+#include "display_device/vdd_capability.h"
 #include "file_handler.h"
 #include "file_mapping/file_mapping_http.h"
 #include "file_mapping/service.h"
@@ -62,7 +63,7 @@
 #include "utility.h"
 #include "uuid.h"
 #include "video.h"
-#include "webhook.h"
+#include "webhook/webhook.h"
 
 using json = nlohmann::json;
 
@@ -165,8 +166,7 @@ namespace nvhttp {
 #endif
                   };
                   if (x509) {
-                    std::string client_cert_pem = crypto::pem(x509);
-                    if (auto uuid = pairing::client_uuid_for_cert(client_cert_pem); !uuid.empty()) {
+                    if (auto uuid = pairing::client_uuid_for_cert(x509.get()); !uuid.empty()) {
                       // Client authentication belongs to the TLS connection,
                       // not to the first HTTP Request object created for it.
                       // Simple-Web-Server replaces Request objects between
@@ -534,6 +534,12 @@ namespace nvhttp {
     // AI capability: inform client if AI proxy is available
     tree.put("root.AiCapability", confighttp::isAiEnabled() ? 1 : 0);
 
+#ifdef _WIN32
+    tree.put("root.VddCapabilityVersion", display_device::vdd_capability::capability_version);
+#else
+    tree.put("root.VddCapabilityVersion", 0);
+#endif
+
     std::ostringstream data;
 
     pt::write_xml(data, tree);
@@ -660,21 +666,24 @@ namespace nvhttp {
                                    std::to_string(net::map_port(rtsp_stream::RTSP_SETUP_PORT)));
     tree.put("root.gamesession", 1);
 
-    // Send webhook notification for successful launch
-    webhook::send_event_async(webhook::event_t {
-      .type = webhook::event_type_t::NV_APP_LAUNCH,
-      .alert_type = "nv_app_launch",
-      .timestamp = webhook::get_current_timestamp(),
-      .client_name = launch_session->client_name,
-      .client_ip = net::addr_to_normalized_string(request->remote_endpoint().address()),
-      .server_ip = net::addr_to_normalized_string(request->local_endpoint().address()),
-      .app_name = proc::proc.get_app_name(appid),
-      .app_id = appid,
-      .session_id = std::to_string(launch_session->id),
-      .extra_data = {
-        { "resolution", std::to_string(launch_session->width) + "x" + std::to_string(launch_session->height) },
-        { "fps", std::to_string(launch_session->fps) },
-        { "host_audio", launch_session->host_audio ? "true" : "false" } } });
+    try {
+      webhook::send_event_async(webhook::event_t {
+        .type = webhook::event_type_t::NV_APP_LAUNCH,
+        .timestamp = webhook::get_current_timestamp(),
+        .client_name = launch_session->client_name,
+        .client_ip = net::addr_to_normalized_string(request->remote_endpoint().address()),
+        .server_ip = net::addr_to_normalized_string(request->local_endpoint().address()),
+        .app_name = proc::proc.get_app_name(appid),
+        .app_id = appid,
+        .session_id = std::to_string(launch_session->id),
+        .extra_data = {
+          { "resolution", std::to_string(launch_session->width) + "x" + std::to_string(launch_session->height) },
+          { "fps", std::to_string(launch_session->fps) },
+          { "host_audio", launch_session->host_audio ? "true" : "false" } } });
+    }
+    catch (...) {
+      BOOST_LOG(error) << "Webhook launch event construction failed"sv;
+    }
 
     // Stream was started successfully, we will restore the state when the app or session terminates
     need_to_restore_display_state = false;
@@ -787,21 +796,25 @@ namespace nvhttp {
     tree.put("root.resume", 1);
     need_to_restore_display_state = false;
 
-    // Send webhook notification for successful resume
-    webhook::send_event_async(webhook::event_t {
-      .type = webhook::event_type_t::NV_APP_RESUME,
-      .alert_type = "nv_app_resume",
-      .timestamp = webhook::get_current_timestamp(),
-      .client_name = launch_session->client_name,
-      .client_ip = net::addr_to_normalized_string(request->remote_endpoint().address()),
-      .server_ip = net::addr_to_normalized_string(request->local_endpoint().address()),
-      .app_name = proc::proc.get_app_name(proc::proc.running()),
-      .app_id = proc::proc.running(),
-      .session_id = std::to_string(launch_session->id),
-      .extra_data = {
-        { "resolution", std::to_string(launch_session->width) + "x" + std::to_string(launch_session->height) },
-        { "fps", std::to_string(launch_session->fps) },
-        { "host_audio", launch_session->host_audio ? "true" : "false" } } });
+    try {
+      const auto app_id = proc::proc.running();
+      webhook::send_event_async(webhook::event_t {
+        .type = webhook::event_type_t::NV_APP_RESUME,
+        .timestamp = webhook::get_current_timestamp(),
+        .client_name = launch_session->client_name,
+        .client_ip = net::addr_to_normalized_string(request->remote_endpoint().address()),
+        .server_ip = net::addr_to_normalized_string(request->local_endpoint().address()),
+        .app_name = proc::proc.get_app_name(app_id),
+        .app_id = app_id,
+        .session_id = std::to_string(launch_session->id),
+        .extra_data = {
+          { "resolution", std::to_string(launch_session->width) + "x" + std::to_string(launch_session->height) },
+          { "fps", std::to_string(launch_session->fps) },
+          { "host_audio", launch_session->host_audio ? "true" : "false" } } });
+    }
+    catch (...) {
+      BOOST_LOG(error) << "Webhook resume event construction failed"sv;
+    }
   }
 
   void
